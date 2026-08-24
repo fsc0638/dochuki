@@ -45,9 +45,20 @@ export function formatMoney(amount: MoneyInput, currency: string): string {
 }
 
 /**
+ * 收斂到指定小數位數（ROUND_HALF_UP）。
+ * schema 有三種精度（金額 6、匯率 8、係數 4），故位數必須由呼叫端明確指定。
+ */
+export function quantize(value: MoneyInput, scale: number): Decimal {
+  if (!Number.isInteger(scale) || scale < 0) {
+    throw new Error(`小數位數必須為非負整數，收到 ${String(scale)}`);
+  }
+  return new Money(value).toDecimalPlaces(scale, Money.ROUND_HALF_UP);
+}
+
+/**
  * 落地用：收斂到 MONEY_SCALE 位小數（ROUND_HALF_UP）。
  * 任何要寫進 DB 的金額都必須經過這裡，確保與 Decimal(18,6) 欄位精度一致。
  */
 export function toStorageScale(amount: MoneyInput): Decimal {
-  return new Money(amount).toDecimalPlaces(MONEY_SCALE, Money.ROUND_HALF_UP);
+  return quantize(amount, MONEY_SCALE);
 }

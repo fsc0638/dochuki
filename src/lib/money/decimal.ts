@@ -30,3 +30,15 @@ export type MoneyInput = Decimal.Value;
  * 2 位小數降級為顯示／匯出層的職責，見 round.ts。
  */
 export const MONEY_SCALE = 6;
+
+/**
+ * 匯率精度，對應 schema 的 `Decimal(18,8)`（`Expense.rateUsed`、`FxRate.rate`）。
+ * 比金額多兩位——匯率會被乘上大額金額，位數不足會放大誤差。
+ */
+export const RATE_SCALE = 8;
+
+/**
+ * 係數精度，對應 schema 的 `Decimal(8,4)` / `Decimal(12,4)` / `Decimal(6,4)`
+ * （`Member.weight`、`LineItem.qty`、`LineItem.taxRate`）。
+ */
+export const FACTOR_SCALE = 4;

@@ -61,6 +61,7 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 ## 程式慣例
 
 - Server Actions 處理寫入；讀取用 RSC。任何金額計算集中在 `src/lib/money/`，UI 層不得自行運算。
+- **DB 邊界一律過 `src/lib/money/fromDb.ts`**：讀取用 `fromDb()` 正規化後才運算（Prisma 回傳的 Decimal 是 precision 20 的另一個建構子，與本專案的 40 不同，長運算鏈會分歧）；寫入依欄位精度選 `toDbAmount()`（6 位）／`toDbRate()`（8 位）／`toDbFactor()`（4 位），不得直接 `.toString()`，也不把捨入交給 PostgreSQL 隱式處理。
 - zod schema 是唯一資料驗證來源（`src/lib/schemas/`），API 邊界全部過 zod。
 - 測試：vitest；金額邏輯每個函式都要有測試；解析 prompt 改動要跑 `fixtures/receipts/` 樣本集比對。
 - commit 訊息：`feat|fix|refactor|test|docs(scope): 描述`，一個 Phase 一個分支。
@@ -91,5 +92,6 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 - 2026-08-24 **待辦（P1 動 schema 時處理）**：Prisma 7 已棄用 `prisma-client-js`，實際產生的 generator 為 `prisma-client` 且 `output` 為必填。IMPLEMENTATION.md §4 的 generator 區塊需同步更新
 - 2026-08-24 **Phase 1 完成**：schema 依 §4 落地並 migrate（`20260824053527_init`）、`src/lib/money/` 五模組、新潟 fixture 與 seed、82 條測試全綠（迴歸 17 條）、`/money-audit` 無違規。DB 實查亦重現全部斷言（741,294.25／741,294／¥2,965,177，逐筆守恆差額 0）
 - 2026-08-24 **P1 裁示（規格衝突）**：IMPLEMENTATION.md §4「所有模式輸出以 2 位小數落地」與迴歸期望值矛盾——住宿B（¥249,821×0.25÷10＝6,245.525）在 2dp 下進位成 6,245.53，使「每人共同分攤 65,305.025」等斷言全部失準。已改為 **6 位小數落地**（與 `Decimal(18,6)` 欄位一致），2dp 降級為顯示／匯出層職責。§4 該句需同步更正
+- 2026-08-24 P1 收尾補 DB 邊界護欄 `src/lib/money/fromDb.ts`（101 條測試全綠）。實作時發現 schema 有三種小數位數——金額 6 位、匯率 8 位（`rateUsed`/`FxRate.rate`）、係數 4 位（`weight`/`qty`/`taxRate`）——統一用 6 位會靜默截斷匯率，故提供三個對應的寫入函式。慣例已寫入上方「程式慣例」
 - 2026-08-24 **P1 新增規格待補**：①「每人共同分攤 65,305.025」實際組成含公費 7,500 與個人消費 35,000，名稱易誤導 ②個人消費預估在 §4 schema 無對應欄位，P3 報表「區塊三個人消費」需要它 ③Prisma 7 的 Rust-free client 必須搭配 driver adapter（`@prisma/adapter-pg`），P2 需抽共用 client 模組 ④Prisma 回傳的 Decimal 精度為 20 位、與本專案 Money 的 40 位不同，讀取邊界應先 `new Money(x.toString())` 正規化
 - 2026-08-24 Docker Desktop 安裝完成，P0 完成定義全數驗證通過：容器 `dochuki-db`（postgres:16）healthy、`prisma migrate dev` 連線成功、實測寫入讀回 `numeric(18,6)` 精度與中文均正確。**本機 5432 已被既有的 PostgreSQL 18 Windows 服務（`postgresql-x64-18`，開機自啟）占用，故容器對外映射改為 5442**，`DATABASE_URL` 同步改為 `localhost:5442`；此處偏離 IMPLEMENTATION.md §10 記載的 5432，§10 需同步更新

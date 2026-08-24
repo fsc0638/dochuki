@@ -1,6 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { convertToHome, resolveRate } from "../src/lib/money/convert";
+import { toDbAmount, toDbRate } from "../src/lib/money/fromDb";
 import { splitExpense } from "../src/lib/money/split";
 import { loadNiigataInput } from "../src/lib/schemas/niigata";
 
@@ -95,10 +96,11 @@ async function main(): Promise<void> {
         category: expense.category,
         description: expense.description,
         currency: expense.currency,
-        amountOriginal: expense.amountOriginal,
+        // 寫入一律經 toDb*：金額 6 位、匯率 8 位，不把捨入交給 PostgreSQL 隱式處理
+        amountOriginal: toDbAmount(expense.amountOriginal),
         rateSource: resolution.source,
-        rateUsed: resolution.rate.toString(),
-        amountHome: amountHome.toString(),
+        rateUsed: toDbRate(resolution.rate),
+        amountHome: toDbAmount(amountHome),
         splitMode: expense.splitMode,
       },
     });
@@ -115,7 +117,7 @@ async function main(): Promise<void> {
       data: result.shares.map((share) => ({
         expenseId: expense.id,
         memberId: share.memberId,
-        shareHome: share.shareHome.toString(),
+        shareHome: toDbAmount(share.shareHome),
       })),
     });
   }
@@ -133,7 +135,7 @@ async function main(): Promise<void> {
       fundId: fund.id,
       memberId: member.id,
       type: "CONTRIBUTION" as const,
-      amount: input.fund.contributionPerMember,
+      amount: toDbAmount(input.fund.contributionPerMember),
       note: `${input.fund.name}提撥`,
     })),
   });
