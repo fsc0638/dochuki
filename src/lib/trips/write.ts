@@ -1,0 +1,357 @@
+import { prisma } from "@/lib/db";
+import { getDailyRate } from "@/lib/fx/frankfurter";
+import { convertToHome, resolveRate } from "@/lib/money/convert";
+import { fromDb, toDbAmount, toDbFactor, toDbRate } from "@/lib/money/fromDb";
+import { splitExpense, type SplitParticipant } from "@/lib/money/split";
+import type {
+  GroupFormInput,
+  MemberFormInput,
+  TripFormInput,
+} from "@/lib/schemas/trip";
+import type { ExpenseFormInput } from "@/lib/schemas/expense";
+
+/**
+ * 行程／成員／組別／支出的寫入層。
+ *
+ * 為何獨立於 Server Actions：Server Action 只能在 Next.js 執行環境跑，若把
+ * 「解析匯率 → 換算 → 分攤 → 落地」直接寫在 action 函式裡，這段最關鍵的邏輯
+ * 就無法像 P1 的 money/ 模組那樣被單獨測試。這裡的函式是純 Node 可測的。
+ *
+ * ★ 匯率快照原則（CLAUDE.md 鐵律 2）：updateTrip 只改 Trip 欄位本身，絕不
+ * 回頭改寫既有 Expense 的 rateUsed／amountHome。行程固定匯率變更只影響
+ * 「之後新建的支出」。
+ */
+
+/** 把 Trip.fixedRates（Json）正規化成 Record<幣別, 匯率字串> */
+function parseFixedRates(json: unknown): Record<string, string> {
+  if (json === null || typeof json !== "object") return {};
+  const result: Record<string, string> = {};
+  for (const [currency, rate] of Object.entries(json as Record<string, unknown>)) {
+    if (typeof rate === "string") result[currency] = rate;
+  }
+  return result;
+}
+
+function buildFixedRatesJson(
+  rows: TripFormInput["fixedRates"],
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const row of rows) {
+    result[row.currency] = toDbRate(row.rate);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------- Trip ----
+
+export async function createTrip(
+  input: TripFormInput,
+): Promise<{ id: string }> {
+  const trip = await prisma.trip.create({
+    data: {
+      name: input.name,
+      startDate: new Date(input.startDate),
+      endDate: new Date(input.endDate),
+      homeCurrency: input.homeCurrency,
+      fixedRates: buildFixedRatesJson(input.fixedRates),
+    },
+  });
+  return { id: trip.id };
+}
+
+export async function updateTrip(
+  tripId: string,
+  input: TripFormInput,
+): Promise<void> {
+  await prisma.trip.update({
+    where: { id: tripId },
+    data: {
+      name: input.name,
+      startDate: new Date(input.startDate),
+      endDate: new Date(input.endDate),
+      homeCurrency: input.homeCurrency,
+      fixedRates: buildFixedRatesJson(input.fixedRates),
+    },
+  });
+}
+
+// --------------------------------------------------------------- Group ----
+
+export async function createGroup(
+  input: GroupFormInput,
+): Promise<{ id: string }> {
+  const group = await prisma.group.create({
+    data: { tripId: input.tripId, name: input.name },
+  });
+  return { id: group.id };
+}
+
+export async function renameGroup(
+  groupId: string,
+  name: string,
+): Promise<void> {
+  await prisma.group.update({ where: { id: groupId }, data: { name } });
+}
+
+/**
+ * 刪除組別。成員的 groupId 由資料庫外鍵設為 SET NULL（migration 已定義），
+ * 不會連帶刪除成員；BY_GROUP 支出的分攤結果是寫入時就落地的快照，不受影響
+ * （schema 未替 Expense 存 groupId，這是刻意的，見 IMPLEMENTATION.md §4）。
+ */
+export async function deleteGroup(groupId: string): Promise<void> {
+  await prisma.group.delete({ where: { id: groupId } });
+}
+
+// -------------------------------------------------------------- Member ----
+
+export async function createMember(
+  input: MemberFormInput,
+): Promise<{ id: string }> {
+  const member = await prisma.member.create({
+    data: {
+      tripId: input.tripId,
+      name: input.name,
+      groupId: input.groupId,
+      weight: input.weight !== undefined ? toDbFactor(input.weight) : undefined,
+    },
+  });
+  return { id: member.id };
+}
+
+export async function updateMember(
+  memberId: string,
+  input: MemberFormInput,
+): Promise<void> {
+  await prisma.member.update({
+    where: { id: memberId },
+    data: {
+      name: input.name,
+      groupId: input.groupId,
+      weight: input.weight !== undefined ? toDbFactor(input.weight) : undefined,
+    },
+  });
+}
+
+/**
+ * 刪除成員。若該成員已有分攤紀錄（ExpenseShare），資料庫外鍵會擋下刪除
+ * （ON DELETE RESTRICT，保護既有金額紀錄不被連帶抹除），這裡把 Prisma 的
+ * 外鍵錯誤代碼 P2003 轉成使用者看得懂的訊息。
+ *
+ * 已知限制：若該成員是某筆支出的付款人（payerId）但沒有分攤紀錄，刪除仍會
+ * 成功、payerId 會被資料庫設為 null（SET NULL），該筆支出會變成「無付款人」。
+ * P2 範圍內接受此行為，之後如需保留付款人歷史需另外處理。
+ */
+export async function deleteMember(memberId: string): Promise<void> {
+  try {
+    await prisma.member.delete({ where: { id: memberId } });
+  } catch (error) {
+    if (isForeignKeyViolation(error)) {
+      throw new Error("此成員已有分攤紀錄，無法刪除");
+    }
+    throw error;
+  }
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: unknown }).code === "P2003"
+  );
+}
+
+// ------------------------------------------------------------- Expense ----
+
+interface ResolvedExpense {
+  currency: string;
+  amountOriginal: string;
+  rateSource: "TRIP_FIXED" | "DAILY_REF" | "MANUAL";
+  rateUsed: string;
+  amountHome: string;
+  shares: Array<{ memberId: string; shareHome: string }>;
+}
+
+/**
+ * 解析匯率、換算、分攤——建立與更新支出共用的核心邏輯，回傳的即是可以直接
+ * 寫入 Expense／ExpenseShare 的欄位值。
+ */
+async function resolveExpense(
+  input: ExpenseFormInput,
+): Promise<ResolvedExpense> {
+  const trip = await prisma.trip.findUniqueOrThrow({
+    where: { id: input.tripId },
+    include: { members: true },
+  });
+  const tripFixedRates = parseFixedRates(trip.fixedRates);
+
+  let dailyRefRate: string | undefined;
+  const needsExternalRate =
+    input.currency.toUpperCase() !== trip.homeCurrency.toUpperCase() &&
+    tripFixedRates[input.currency] === undefined &&
+    input.manualRate === undefined;
+
+  if (needsExternalRate) {
+    const paidAtDateOnly = input.paidAt.slice(0, 10);
+    const daily = await getDailyRate({
+      base: input.currency,
+      quote: trip.homeCurrency,
+      date: paidAtDateOnly,
+    });
+    if (daily === null) {
+      throw new Error(
+        `找不到 ${input.currency} → ${trip.homeCurrency} 的匯率：行程未設定固定匯率、` +
+          "未手動輸入，且參考匯率服務暫時無法使用。請手動輸入匯率。",
+      );
+    }
+    dailyRefRate = daily.rate.toString();
+  }
+
+  const resolution = resolveRate({
+    currency: input.currency,
+    homeCurrency: trip.homeCurrency,
+    tripFixedRates,
+    manualRate: input.manualRate,
+    dailyRefRate,
+  });
+  const amountHome = convertToHome({
+    amountOriginal: input.amountOriginal,
+    rate: resolution.rate,
+  });
+
+  const participants = buildParticipants(input, trip.members);
+  const groupId = input.splitMode === "BY_GROUP" ? input.groupId : null;
+
+  if (
+    (input.splitMode === "EQUAL" || input.splitMode === "WEIGHT") &&
+    !input.participantIds.includes(input.payerId)
+  ) {
+    throw new Error(
+      "付款人必須包含在分攤名單內。若付款人本身不參與這筆分攤，請改用「按組計價」，" +
+        "或另外記一筆由付款人單獨負擔的支出。",
+    );
+  }
+
+  const result = splitExpense({
+    amountHome,
+    mode: input.splitMode,
+    participants,
+    payerId: input.payerId,
+    groupId,
+  });
+
+  return {
+    currency: input.currency,
+    amountOriginal: toDbAmount(input.amountOriginal),
+    rateSource: resolution.source,
+    rateUsed: toDbRate(resolution.rate),
+    amountHome: toDbAmount(amountHome),
+    shares: result.shares.map((share) => ({
+      memberId: share.memberId,
+      shareHome: toDbAmount(share.shareHome),
+    })),
+  };
+}
+
+function buildParticipants(
+  input: ExpenseFormInput,
+  tripMembers: Array<{
+    id: string;
+    groupId: string | null;
+    weight: { toString(): string };
+  }>,
+): SplitParticipant[] {
+  switch (input.splitMode) {
+    case "EQUAL":
+      return input.participantIds.map((memberId) => ({ memberId }));
+    case "WEIGHT":
+      return input.participantIds.map((memberId) => {
+        const member = tripMembers.find((m) => m.id === memberId);
+        return {
+          memberId,
+          weight: member ? fromDb(member.weight) : undefined,
+        };
+      });
+    case "BY_GROUP":
+      return tripMembers.map((member) => ({
+        memberId: member.id,
+        groupId: member.groupId,
+      }));
+    case "EXACT":
+      return input.exactShares.map((row) => ({
+        memberId: row.memberId,
+        exactShare: row.amount,
+      }));
+  }
+}
+
+/** 建立支出＋分攤明細，同一交易內完成，避免出現「有支出沒分攤」的中間態 */
+export async function createExpense(
+  input: ExpenseFormInput,
+): Promise<{ id: string }> {
+  const resolved = await resolveExpense(input);
+  const expenseId = await prisma.$transaction(async (tx) => {
+    const expense = await tx.expense.create({
+      data: {
+        tripId: input.tripId,
+        payerId: input.payerId,
+        paidAt: new Date(input.paidAt),
+        category: input.category,
+        description: input.description,
+        currency: resolved.currency,
+        amountOriginal: resolved.amountOriginal,
+        rateSource: resolved.rateSource,
+        rateUsed: resolved.rateUsed,
+        amountHome: resolved.amountHome,
+        splitMode: input.splitMode,
+      },
+    });
+    await tx.expenseShare.createMany({
+      data: resolved.shares.map((share) => ({
+        expenseId: expense.id,
+        memberId: share.memberId,
+        shareHome: share.shareHome,
+      })),
+    });
+    return expense.id;
+  });
+  return { id: expenseId };
+}
+
+/** 更新支出：重新解析匯率與分攤，整批替換 ExpenseShare（同一交易內完成） */
+export async function updateExpense(
+  expenseId: string,
+  input: ExpenseFormInput,
+): Promise<void> {
+  const resolved = await resolveExpense(input);
+  await prisma.$transaction(async (tx) => {
+    await tx.expense.update({
+      where: { id: expenseId },
+      data: {
+        payerId: input.payerId,
+        paidAt: new Date(input.paidAt),
+        category: input.category,
+        description: input.description,
+        currency: resolved.currency,
+        amountOriginal: resolved.amountOriginal,
+        rateSource: resolved.rateSource,
+        rateUsed: resolved.rateUsed,
+        amountHome: resolved.amountHome,
+        splitMode: input.splitMode,
+      },
+    });
+    await tx.expenseShare.deleteMany({ where: { expenseId } });
+    await tx.expenseShare.createMany({
+      data: resolved.shares.map((share) => ({
+        expenseId,
+        memberId: share.memberId,
+        shareHome: share.shareHome,
+      })),
+    });
+  });
+}
+
+/** 刪除支出。ExpenseShare／LineItem／Receipt 皆為 ON DELETE CASCADE，一併清除 */
+export async function deleteExpense(expenseId: string): Promise<void> {
+  await prisma.expense.delete({ where: { id: expenseId } });
+}
