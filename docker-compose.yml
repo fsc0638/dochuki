@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: dochuki
       POSTGRES_DB: dochuki
     ports:
-      - "5432:5432"
+      # 本機 5432 已被既有的 PostgreSQL 18 Windows 服務（postgresql-x64-18）占用，
+      # 故對外改用 5442；容器內仍是標準的 5432。DATABASE_URL 需對應 5442。
+      - "5442:5432"
     volumes:
       - dochuki-pgdata:/var/lib/postgresql/data
     healthcheck:

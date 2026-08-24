@@ -89,3 +89,4 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 - 2026-08-24 Phase 0 腳手架完成：Next.js 15.5.23 + TS strict + Tailwind 4 + pnpm 11、Prisma 7.9.1（空 schema）、vitest 4、docker-compose（postgres:16）、§3 目錄骨架、README。lint／typecheck／test 全綠
 - 2026-08-24 專案路徑由 `OneDrive\文件\個人研發專案\dochuki-kit` 移至 `OneDrive\dev\dochuki`。原因：pnpm 在含非 ASCII 字元的路徑下安裝必定崩潰（0xC0000409，崩於寫入 virtual store 階段）。已實測排除 OneDrive、pnpm 版本、MAX_PATH、Node 版本四項因素，唯一變因為路徑中的中文字。新路徑仍在 OneDrive 內正常同步
 - 2026-08-24 **待辦（P1 動 schema 時處理）**：Prisma 7 已棄用 `prisma-client-js`，實際產生的 generator 為 `prisma-client` 且 `output` 為必填。IMPLEMENTATION.md §4 的 generator 區塊需同步更新
+- 2026-08-24 Docker Desktop 安裝完成，P0 完成定義全數驗證通過：容器 `dochuki-db`（postgres:16）healthy、`prisma migrate dev` 連線成功、實測寫入讀回 `numeric(18,6)` 精度與中文均正確。**本機 5432 已被既有的 PostgreSQL 18 Windows 服務（`postgresql-x64-18`，開機自啟）占用，故容器對外映射改為 5442**，`DATABASE_URL` 同步改為 `localhost:5442`；此處偏離 IMPLEMENTATION.md §10 記載的 5432，§10 需同步更新
