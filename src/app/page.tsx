@@ -6,7 +6,7 @@ export default function Home() {
         <p className="mt-1 text-sm text-neutral-500">Dōchūki · 旅遊記帳</p>
       </div>
       <p className="text-sm leading-relaxed text-neutral-600">
-        腳手架已就緒（Phase 0）。記帳、拍照解析與報表功能自 Phase 1 起實作。
+        資料模型與分攤引擎已就緒（P1）。記帳介面自 P2 起實作。
       </p>
     </main>
   );

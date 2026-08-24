@@ -1,5 +1,8 @@
 # 道中記（Dōchūki）× Claude Code 開發提示詞集
 
+> **本檔為階段編號的權威來源**（2026-08-24 裁示）。CLAUDE.md 的「目前進度」與
+> IMPLEMENTATION.md §9 驗收表皆須與本檔一致；三者若再出現分歧，以本檔為準。
+>
 > 用法：在 repo 根目錄執行 `claude` 進入互動模式，`CLAUDE.md` 會自動載入。
 > 每個 Phase 開新會話、貼對應提示詞；大改動先要 Claude 提計畫、你確認後才動工（提示詞已內建此要求）。
 > 官方文件：https://docs.claude.com/en/docs/claude-code/overview
@@ -102,7 +105,7 @@
 完成定義：用新潟 seed 產出三檔，PDF 每人總計 = 73,635/72,998/76,743、全團 741,294；公費餘額 = Σ提撥 − Σ支用。
 ```
 
-## P5 — PWA 與收尾（Phase 3 尾聲）
+## P5 — PWA 與收尾（MVP 最後一段）
 
 ```text
 目標：可安裝的 PWA 與部署。

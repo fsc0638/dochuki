@@ -122,7 +122,7 @@
     "contributionPerMember": "30000"
   },
   "personalBudget": {
-    "_comment": "個人消費預估。docs/IMPLEMENTATION.md §4 的 schema 目前沒有對應欄位，P3 報表「區塊三個人消費」需要它，屬待補的規格缺口。",
+    "_comment": "個人消費預估。docs/IMPLEMENTATION.md §4 的 schema 目前沒有對應欄位，P4 報表「區塊三個人消費」需要它，屬待補的規格缺口。",
     "currency": "TWD",
     "perMember": "35000"
   }

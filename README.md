@@ -6,7 +6,7 @@
 - 詳細規格：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)
 - 各階段開發提示詞：[docs/PROMPTS.md](docs/PROMPTS.md)
 
-目前進度：**Phase 0 腳手架**。記帳、解析與報表功能自 Phase 1 起實作。
+目前進度：**P1 完成**（資料模型、分攤引擎、新潟迴歸測試全綠）。下一步 P2 記帳 CRUD 與多幣別 UI。階段編號見 [docs/PROMPTS.md](docs/PROMPTS.md)。
 
 ## 前置需求
 
@@ -26,7 +26,7 @@ pnpm install
 cp .env.example .env
 ```
 
-`.env` 的 `DATABASE_URL` 預設值已對應 `docker-compose.yml`，本機開發不需修改。`ANTHROPIC_API_KEY` 到 Phase 2 才會用到。
+`.env` 的 `DATABASE_URL` 預設值已對應 `docker-compose.yml`，本機開發不需修改。`ANTHROPIC_API_KEY` 到 P3 拍照解析才會用到。
 
 > **連接埠note**：容器對外映射 **5442**（非 IMPLEMENTATION.md §10 記載的 5432）。開發機的 5432 已被既有的 PostgreSQL 18 Windows 服務（`postgresql-x64-18`）占用，兩者互不影響。
 
@@ -73,7 +73,7 @@ docker compose down -v
 ```
 dochuki/
 ├─ docker-compose.yml     # postgres:16
-├─ prisma/                # schema 與 migration（Phase 1 填內容）
+├─ prisma/                # schema、migration、seed（新潟迴歸 fixture）
 ├─ prisma.config.ts       # Prisma 7 設定（schema/migration/datasource 位置）
 ├─ fixtures/
 │  ├─ niigata/            # 新潟迴歸案例輸入與期望值

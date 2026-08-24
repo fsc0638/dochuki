@@ -10,7 +10,7 @@
 以手機為主要情境的旅遊記帳 PWA。核心體驗：**拍照收據 → AI 翻譯與結構化解析（店名/品項/時間/地址/幣別/稅金）→ 逐欄確認 → 入帳分攤 → 一鍵匯出 CSV / Excel / PDF 彙整總表**。
 支援多幣別（原幣＋台幣約當、可鎖定固定匯率）、群組分攤（均分/加權/指定/按組計價）、公費池、個人消費額度追蹤。
 
-## 技術棧（Phase 1–3 = 方案 B 快速 MVP）
+## 技術棧（P0–P5 = 方案 B 快速 MVP）
 
 - Next.js 15（App Router, Server Actions）+ TypeScript **strict**
 - Prisma + PostgreSQL 16（docker compose 起本機 DB）
@@ -18,7 +18,7 @@
 - 金額運算：`decimal.js`；Excel：`exceljs`；PDF：HTML 模板 + Playwright print
 - 收據解析：Anthropic API（vision）→ zod 驗證的結構化 JSON（schema 見 IMPLEMENTATION.md §5）
 - 匯率：Frankfurter API（`api.frankfurter.dev`）+ 行程固定匯率 + 手動輸入，三源並存
-- 中期（Phase 4+）：解析服務抽為 Python sidecar（PaddleOCR ONNX），資料層遷入既有 Rust/PG 平台
+- 後續（P6）：解析服務抽為 Python sidecar（PaddleOCR ONNX），資料層遷入既有 Rust/PG 平台
 
 ## 常用指令
 
@@ -76,11 +76,16 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 
 ## 目前進度
 
-- [x] Phase 0 腳手架與 schema（docs/PROMPTS.md §P0–P1）
-- [x] Phase 1 記帳核心＋迴歸測試綠燈
-- [ ] Phase 2 拍照解析
-- [ ] Phase 3 報表（CSV/xlsx/PDF）與公費池
-- [ ] Phase 4 自架 OCR、離線佇列、清償計畫
+> 階段編號以 `docs/PROMPTS.md` 為權威來源，本清單與 IMPLEMENTATION.md §9 皆須與之一致。
+> （2026-08-24 已對齊：原本三份文件對「拍照解析是 Phase 2 還是 P3」等說法不一。）
+
+- [x] P0 腳手架（§P0）
+- [x] P1 資料模型、分攤引擎與迴歸測試（§P1）
+- [ ] P2 記帳 CRUD 與多幣別 UI（§P2）
+- [ ] P3 拍照解析（§P3）
+- [ ] P4 報表輸出（CSV/xlsx/PDF）與公費池（§P4）
+- [ ] P5 PWA 與收尾（§P5）
+- [ ] P6 強化：自架 OCR sidecar、離線佇列、清償計畫（PROMPTS.md 無對應段落，見 IMPLEMENTATION.md §9）
 
 （完成一項就把勾打上，並在下方追加一行日期＋摘要）
 
@@ -92,6 +97,8 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 - 2026-08-24 **待辦（P1 動 schema 時處理）**：Prisma 7 已棄用 `prisma-client-js`，實際產生的 generator 為 `prisma-client` 且 `output` 為必填。IMPLEMENTATION.md §4 的 generator 區塊需同步更新
 - 2026-08-24 **Phase 1 完成**：schema 依 §4 落地並 migrate（`20260824053527_init`）、`src/lib/money/` 五模組、新潟 fixture 與 seed、82 條測試全綠（迴歸 17 條）、`/money-audit` 無違規。DB 實查亦重現全部斷言（741,294.25／741,294／¥2,965,177，逐筆守恆差額 0）
 - 2026-08-24 **P1 裁示（規格衝突）**：IMPLEMENTATION.md §4「所有模式輸出以 2 位小數落地」與迴歸期望值矛盾——住宿B（¥249,821×0.25÷10＝6,245.525）在 2dp 下進位成 6,245.53，使「每人共同分攤 65,305.025」等斷言全部失準。已改為 **6 位小數落地**（與 `Decimal(18,6)` 欄位一致），2dp 降級為顯示／匯出層職責。§4 該句需同步更正
+- 2026-08-24 **階段編號對齊**：三份文件原本說法不一（本檔與 IMPLEMENTATION.md §9 把拍照解析當 Phase 2、PROMPTS.md 是 §P3；§9 把 CRUD 列在 P1 但 §P1 範圍不含 CRUD；§9 原缺 PWA 階段）。裁示以 **PROMPTS.md 為權威**，全面改為 P0 腳手架／P1 資料模型與引擎／P2 記帳 CRUD／P3 拍照解析／P4 報表與公費／P5 PWA／P6 強化。已同步 CLAUDE.md、IMPLEMENTATION.md §1/§2/§5.4/§8/§9、PROMPTS.md、README.md、.env.example、`summary.ts`、`input.json`、首頁文案
+- 2026-08-24 GitHub remote 設為 `https://github.com/fsc0638/dochuki.git`（小寫，符合命名規則）。**尚未推送**；GitHub 上的 repo 名稱仍為 `DochuKi`，待手動更名
 - 2026-08-24 P1 收尾補 DB 邊界護欄 `src/lib/money/fromDb.ts`（101 條測試全綠）。實作時發現 schema 有三種小數位數——金額 6 位、匯率 8 位（`rateUsed`/`FxRate.rate`）、係數 4 位（`weight`/`qty`/`taxRate`）——統一用 6 位會靜默截斷匯率，故提供三個對應的寫入函式。慣例已寫入上方「程式慣例」
 - 2026-08-24 **P1 新增規格待補**：①「每人共同分攤 65,305.025」實際組成含公費 7,500 與個人消費 35,000，名稱易誤導 ②個人消費預估在 §4 schema 無對應欄位，P3 報表「區塊三個人消費」需要它 ③Prisma 7 的 Rust-free client 必須搭配 driver adapter（`@prisma/adapter-pg`），P2 需抽共用 client 模組 ④Prisma 回傳的 Decimal 精度為 20 位、與本專案 Money 的 40 位不同，讀取邊界應先 `new Money(x.toString())` 正規化
 - 2026-08-24 Docker Desktop 安裝完成，P0 完成定義全數驗證通過：容器 `dochuki-db`（postgres:16）healthy、`prisma migrate dev` 連線成功、實測寫入讀回 `numeric(18,6)` 精度與中文均正確。**本機 5432 已被既有的 PostgreSQL 18 Windows 服務（`postgresql-x64-18`，開機自啟）占用，故容器對外映射改為 5442**，`DATABASE_URL` 同步改為 `localhost:5442`；此處偏離 IMPLEMENTATION.md §10 記載的 5432，§10 需同步更新

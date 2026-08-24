@@ -7,8 +7,12 @@
 
 專案名：**道中記 Dōchūki**（repo `dochuki`）。
 
-**MVP 定義（Phase 1–3）**：單一行程、單一團體可完整走完「建行程 → 建成員/組別 → 拍照或手動入帳 → 多幣別分攤 → 公費池 → 一鍵輸出 CSV + Excel + PDF」。
-**非目標（Phase 4 之後）**：多人即時協作、帳號系統、清償計畫、歷史統計儀表板、iOS 原生殼。
+> 階段編號以 `docs/PROMPTS.md` 為權威來源（2026-08-24 對齊）。
+> 對照：P0 腳手架／P1 資料模型與分攤引擎／P2 記帳 CRUD 與多幣別 UI／P3 拍照解析／
+> P4 報表與公費池／P5 PWA 與收尾／P6 強化（PROMPTS.md 無對應段落，僅見本文 §9）。
+
+**MVP 定義（P0–P5）**：單一行程、單一團體可完整走完「建行程 → 建成員/組別 → 拍照或手動入帳 → 多幣別分攤 → 公費池 → 一鍵輸出 CSV + Excel + PDF」。
+**非目標（P6 之後）**：多人即時協作、帳號系統、清償計畫、歷史統計儀表板、iOS 原生殼。
 
 驗收基準以真實資料為準：2026/09 新潟・佐渡 10 人團全部單據與分攤結果（見 CLAUDE.md 迴歸案例）。
 
@@ -30,7 +34,7 @@
  檔案儲存 /data/receipts（原圖永久保存，可重跑解析）
 ```
 
-Phase 4 演進：解析服務抽成 Python FastAPI sidecar（PaddleOCR ONNX，低信心案件才升級呼叫 LLM）；資料庫與檔案儲存遷入既有 Rust/PostgreSQL 平台，收據圖檔套用既有 vault 靜態加密。
+P6 演進：解析服務抽成 Python FastAPI sidecar（PaddleOCR ONNX，低信心案件才升級呼叫 LLM）；資料庫與檔案儲存遷入既有 Rust/PostgreSQL 平台，收據圖檔套用既有 vault 靜態加密。
 
 ## 3. 目錄結構
 
@@ -296,7 +300,7 @@ Rules:
 
 ### 5.4 準確率評估
 
-`fixtures/receipts/` 每張圖配一份人工標註 JSON。`pnpm test parse-eval` 計算關鍵欄位（total/datetime/currency/tax_rate）錯誤率與品項召回率；Phase 2 驗收線：30 張實體收據關鍵欄位人工修正率 < 20%。
+`fixtures/receipts/` 每張圖配一份人工標註 JSON。`pnpm test parse-eval` 計算關鍵欄位（total/datetime/currency/tax_rate）錯誤率與品項召回率；P3 驗收線：30 張實體收據關鍵欄位人工修正率 < 20%。
 
 ## 6. 匯率模組
 
@@ -313,27 +317,25 @@ Rules:
 
 ## 8. PWA 與離線
 
-`manifest.json`（name「道中記 Dōchūki」、short_name「道中記」）+ Service Worker（next-pwa 或手寫 workbox）。Phase 3 僅要求可安裝與快取殼層；Phase 4 加離線佇列：入帳寫 IndexedDB `outbox`，連線恢復由 SW background sync 補傳，衝突以 client 時間戳後寫覆蓋（單人使用前提）。
+`manifest.json`（name「道中記 Dōchūki」、short_name「道中記」）+ Service Worker（next-pwa 或手寫 workbox）。P5 僅要求可安裝與快取殼層；P6 加離線佇列：入帳寫 IndexedDB `outbox`，連線恢復由 SW background sync 補傳，衝突以 client 時間戳後寫覆蓋（單人使用前提）。
 
 ## 9. 分階段驗收（Definition of Done）
 
 | Phase | 交付 | 驗收（全部必須為真） |
 |---|---|---|
 | P0 腳手架 | repo 可跑、DB 起得來、CI 綠 | `pnpm dev` 可開首頁；`prisma migrate dev` 成功；lint/typecheck/test 通過 |
-| P1 記帳核心 | schema、split 引擎、CRUD、seed | `pnpm test regression` 全綠（新潟數字逐項吻合）；四種分攤模式測試齊備 |
-| P2 拍照解析 | 上傳、解析、確認頁 | 30 張樣本關鍵欄位修正率 <20%；解析失敗可降級手動；原圖可重跑 |
-| P3 報表與公費 | CSV/xlsx/PDF、公費池、匯率 | 一鍵產出三檔且數字互相一致；PDF 版型含縮圖索引；公費餘額 = Σ提撥−Σ支用 |
-| P4 強化 | PaddleOCR sidecar、離線、清償 | 低信心才走 LLM，單張均攤成本下降；斷網入帳恢復後自動補傳 |
+| P1 資料模型與引擎 | schema、`money/` 模組、seed、迴歸測試 | `pnpm test regression` 全綠（新潟數字逐項吻合）；四種分攤模式測試齊備；`/money-audit` 無違規 |
+| P2 記帳 CRUD 與多幣別 UI | 行程/成員/組別/支出 CRUD、匯率三源 UI、總覽頁 | 用 seed 的新潟資料操作一輪 CRUD 不出錯；總覽頁每人小計與迴歸期望一致 |
+| P3 拍照解析 | 上傳、解析、確認頁 | 30 張樣本關鍵欄位修正率 <20%；解析失敗可降級手動；原圖可重跑 |
+| P4 報表與公費 | CSV/xlsx/PDF、公費池、匯率 | 一鍵產出三檔且數字互相一致；PDF 版型含縮圖索引；公費餘額 = Σ提撥−Σ支用 |
+| P5 PWA 與收尾 | manifest、Service Worker、Dockerfile、部署 | 手機可加入主畫面全螢幕開啟；容器內 Playwright 能產 PDF |
+| P6 強化 | PaddleOCR sidecar、離線佇列、清償計畫 | 低信心才走 LLM，單張均攤成本下降；斷網入帳恢復後自動補傳 |
 
-> **★ 待釐清：本表與 `docs/PROMPTS.md` 的階段編號／範圍不一致**（2026-08-24 發現，尚未裁示）
-> 1. **CRUD 歸屬**：本表把「CRUD」列在 P1，但 PROMPTS.md §P1 的範圍與完成定義都不含 CRUD
->    （§P1 只有 schema、`money/` 模組、seed、迴歸測試、分攤測試）。實際 P1 交付依 §P1 執行，
->    未含 CRUD。
-> 2. **解析階段編號**：本表與 CLAUDE.md 的「Phase 2」是拍照解析，但 PROMPTS.md 的
->    **§P2 是「記帳 CRUD 與多幣別 UI」**、解析在 §P3，之後全部順延一號。
->
-> 三份文件需對齊。建議以 PROMPTS.md 的順序為準（CRUD 先於解析——解析的終點是建立
-> Expense，沒有 CRUD 與確認頁，解析結果無處落地），並據此修正本表與 CLAUDE.md 的勾選項。
+> 本表已於 2026-08-24 對齊 `docs/PROMPTS.md` 的階段編號（該檔為權威來源）。
+> 對齊前的三處不一致：①本表把 CRUD 列在 P1，但 §P1 範圍不含 CRUD ②拍照解析在本表
+> 與 CLAUDE.md 是「Phase 2」、在 PROMPTS.md 是 §P3 ③本表原缺 PWA 階段。
+> 裁示採 PROMPTS.md 順序——CRUD 先於解析，因為解析的終點是建立 Expense，
+> 沒有 CRUD 與確認頁，解析結果無處落地。
 
 ## 10. 環境變數
 
