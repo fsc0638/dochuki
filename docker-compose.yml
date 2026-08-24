@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16
+    container_name: dochuki-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dochuki
+      POSTGRES_PASSWORD: dochuki
+      POSTGRES_DB: dochuki
+    ports:
+      - "5432:5432"
+    volumes:
+      - dochuki-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # migrate 前確認 DB 真的接得上，避免 compose 剛起就跑 migrate 撞 connection refused
+      test: ["CMD-SHELL", "pg_isready -U dochuki -d dochuki"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dochuki-pgdata:

@@ -1,0 +1,91 @@
+# CLAUDE.md — 道中記 Dōchūki（旅遊記帳 PWA）
+
+> 本檔為專案憲法，Claude Code 每次會話自動載入。改動守則請同步更新此檔（用 `/memory` 或直接編輯）。
+> 詳細規格見 `docs/IMPLEMENTATION.md`，開發提示詞見 `docs/PROMPTS.md`。
+
+## 專案是什麼
+
+**道中記（Dōchūki）**——名稱取自江戶時代旅人隨身記錄行程與見聞的小冊「道中記」。repo／CLI／套件名一律小寫 `dochuki`，PWA 短名顯示「道中記」。
+
+以手機為主要情境的旅遊記帳 PWA。核心體驗：**拍照收據 → AI 翻譯與結構化解析（店名/品項/時間/地址/幣別/稅金）→ 逐欄確認 → 入帳分攤 → 一鍵匯出 CSV / Excel / PDF 彙整總表**。
+支援多幣別（原幣＋台幣約當、可鎖定固定匯率）、群組分攤（均分/加權/指定/按組計價）、公費池、個人消費額度追蹤。
+
+## 技術棧（Phase 1–3 = 方案 B 快速 MVP）
+
+- Next.js 15（App Router, Server Actions）+ TypeScript **strict**
+- Prisma + PostgreSQL 16（docker compose 起本機 DB）
+- UI：Tailwind CSS；PWA（manifest + Service Worker）
+- 金額運算：`decimal.js`；Excel：`exceljs`；PDF：HTML 模板 + Playwright print
+- 收據解析：Anthropic API（vision）→ zod 驗證的結構化 JSON（schema 見 IMPLEMENTATION.md §5）
+- 匯率：Frankfurter API（`api.frankfurter.dev`）+ 行程固定匯率 + 手動輸入，三源並存
+- 中期（Phase 4+）：解析服務抽為 Python sidecar（PaddleOCR ONNX），資料層遷入既有 Rust/PG 平台
+
+## 常用指令
+
+```bash
+docker compose up -d          # 啟動 PostgreSQL
+pnpm dev                      # 開發伺服器
+pnpm prisma migrate dev       # 建立/套用 migration
+pnpm prisma db seed           # 匯入新潟迴歸 fixture
+pnpm test                     # vitest 全部測試
+pnpm test regression          # 只跑金額迴歸測試（改動任何金額邏輯後必跑）
+pnpm lint && pnpm typecheck   # 提交前必過
+```
+
+## 金額處理鐵律（違反即為 bug）
+
+1. **禁止用 float 表示金錢**。DB 用 `Decimal @db.Decimal(18,6)`，程式內一律 `decimal.js`。
+2. 每筆支出必存四件套：`amount_original` + `currency` + `rate_used` + `amount_home`（記帳幣約當）。`rate_used` 是入帳當下快照，事後改匯率設定不得回溯改動既有資料。
+3. 顯示規則：JPY 取整數；TWD 顯示四捨五入至整數（**ROUND_HALF_UP**，不是 banker's rounding），內部保留 2 位小數。
+4. 分攤除不盡時允許尾差 ±1 元，但「各人分攤之和」與「支出總額」差額必須歸零：餘數指派給付款人。
+5. 匯率語意：`rate = 1 單位原幣 兌 多少記帳幣`（例：JPY→TWD 固定 0.25，即 1 TWD = 4 JPY）。
+
+## 永久迴歸案例（新潟・佐渡 10 人團，匯率 0.25）
+
+seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test regression` 必須全綠**：
+
+| 輸入 | 值 |
+|---|---|
+| 共同 JPY：租車 / 渡輪 / 住宿A / 住宿B | 246,100 / 138,280 / 220,000 / 249,821（=83,273.666̄×3）|
+| 共同 TWD：保險 | 14,500 |
+| 機票 TWD（按組）：G1 6人 / G2 2人 / G3 2人 | 49,982 / 15,386 / 22,876 |
+| 公費 30,000 JPY/人；個人消費預估 35,000 TWD/人 | 全員 |
+
+| 斷言（TWD） | 期望值 |
+|---|---|
+| 每人共同分攤（不含機票，精確） | 65,305.025 |
+| 每人總計 G1 / G2 / G3（顯示值，HALF_UP 取整） | **73,635 / 72,998 / 76,743** |
+| 全團 10 人合計（精確 / 顯示） | 741,294.25 / **741,294**（=¥2,965,177）|
+| 交叉驗證 | 逐人加總 ≡ 分類加總，差額為 0 |
+
+## 程式慣例
+
+- Server Actions 處理寫入；讀取用 RSC。任何金額計算集中在 `src/lib/money/`，UI 層不得自行運算。
+- zod schema 是唯一資料驗證來源（`src/lib/schemas/`），API 邊界全部過 zod。
+- 測試：vitest；金額邏輯每個函式都要有測試；解析 prompt 改動要跑 `fixtures/receipts/` 樣本集比對。
+- commit 訊息：`feat|fix|refactor|test|docs(scope): 描述`，一個 Phase 一個分支。
+- 註解與 UI 文案用繁體中文；識別字用英文。
+
+## 禁止事項
+
+- 禁止複製 AGPL 專案（Cospend、Firefly III）任何程式碼——只准借鏡設計與資料格式。
+- 禁止把收據圖檔或解析結果寫進 log；卡號只存末四碼。
+- 禁止在未跑迴歸測試的情況下合併任何觸及 `src/lib/money/` 的變更。
+- CSV 一律 UTF-8 **with BOM**（Excel 中文相容），不要「順手」改成無 BOM。
+
+## 目前進度
+
+- [x] Phase 0 腳手架與 schema（docs/PROMPTS.md §P0–P1）
+- [ ] Phase 1 記帳核心＋迴歸測試綠燈
+- [ ] Phase 2 拍照解析
+- [ ] Phase 3 報表（CSV/xlsx/PDF）與公費池
+- [ ] Phase 4 自架 OCR、離線佇列、清償計畫
+
+（完成一項就把勾打上，並在下方追加一行日期＋摘要）
+
+### 進度日誌
+- 2026-08-24 專案文件初始化（CLAUDE.md / IMPLEMENTATION.md / PROMPTS.md）
+- 2026-08-24 專案定名「道中記 Dōchūki」（repo：dochuki），已查證 App 商店與常見命名空間無衝突
+- 2026-08-24 Phase 0 腳手架完成：Next.js 15.5.23 + TS strict + Tailwind 4 + pnpm 11、Prisma 7.9.1（空 schema）、vitest 4、docker-compose（postgres:16）、§3 目錄骨架、README。lint／typecheck／test 全綠
+- 2026-08-24 專案路徑由 `OneDrive\文件\個人研發專案\dochuki-kit` 移至 `OneDrive\dev\dochuki`。原因：pnpm 在含非 ASCII 字元的路徑下安裝必定崩潰（0xC0000409，崩於寫入 virtual store 階段）。已實測排除 OneDrive、pnpm 版本、MAX_PATH、Node 版本四項因素，唯一變因為路徑中的中文字。新路徑仍在 OneDrive 內正常同步
+- 2026-08-24 **待辦（P1 動 schema 時處理）**：Prisma 7 已棄用 `prisma-client-js`，實際產生的 generator 為 `prisma-client` 且 `output` 為必填。IMPLEMENTATION.md §4 的 generator 區塊需同步更新
