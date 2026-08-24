@@ -48,6 +48,58 @@ const BaseExpenseFieldsSchema = z.object({
  *   EXACT           → exactShares（總和須等於換算後的 amountHome，於寫入層核對，
  *                      因為 amountHome 是換算後才知道的值，zod 這層看不到）
  */
+/**
+ * 從 <form> 的 FormData 組出 ExpenseFormSchema 能解析的形狀。
+ * `memberIds` 是行程全體成員 id，用來從 `exactShare.<memberId>` 這種
+ * 逐人欄位重建 EXACT 模式的陣列——只收有填值的列，空白代表「這人不用付」。
+ */
+export function parseExpenseFormData(
+  formData: FormData,
+  memberIds: string[],
+): unknown {
+  const manualRate = formData.get("manualRate");
+  const base = {
+    tripId: formData.get("tripId"),
+    description: formData.get("description"),
+    category: formData.get("category"),
+    paidAt: formData.get("paidAt"),
+    currency: formData.get("currency"),
+    amountOriginal: formData.get("amountOriginal"),
+    payerId: formData.get("payerId"),
+    manualRate:
+      typeof manualRate === "string" && manualRate.trim() !== ""
+        ? manualRate
+        : undefined,
+  };
+
+  const splitMode = formData.get("splitMode");
+  switch (splitMode) {
+    case "EQUAL":
+    case "WEIGHT":
+      return {
+        ...base,
+        splitMode,
+        participantIds: formData.getAll("participantIds"),
+      };
+    case "BY_GROUP":
+      return { ...base, splitMode, groupId: formData.get("groupId") };
+    case "EXACT": {
+      const exactShares = memberIds
+        .map((memberId) => ({
+          memberId,
+          amount: formData.get(`exactShare.${memberId}`),
+        }))
+        .filter(
+          (row): row is { memberId: string; amount: string } =>
+            typeof row.amount === "string" && row.amount.trim() !== "",
+        );
+      return { ...base, splitMode, exactShares };
+    }
+    default:
+      return { ...base, splitMode };
+  }
+}
+
 export const ExpenseFormSchema = z.discriminatedUnion("splitMode", [
   BaseExpenseFieldsSchema.extend({
     splitMode: z.literal(SplitModeEnum.enum.EQUAL),

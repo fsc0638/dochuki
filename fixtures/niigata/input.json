@@ -9,8 +9,8 @@
     "id": "trip-niigata-2026",
     "_idComment": "固定 id：讓 prisma/seed.ts 只清除並重建本行程的資料，不必清空整個資料庫。",
     "name": "新潟・佐渡 10 人團",
-    "startDate": "2026-09-12T00:00:00.000+09:00",
-    "endDate": "2026-09-16T00:00:00.000+09:00",
+    "startDate": "2026-09-12",
+    "endDate": "2026-09-16",
     "homeCurrency": "TWD",
     "fixedRates": { "JPY": "0.25" }
   },

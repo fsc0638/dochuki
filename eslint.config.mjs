@@ -22,6 +22,16 @@ const eslintConfig = [
       "src/generated/**",
     ],
   },
+  {
+    rules: {
+      // useActionState 系列的 Server Action 簽名固定要收 (prevState, formData)，
+      // 有時內部用不到；底線前綴是刻意標記「這個參數必須存在但不使用」。
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

@@ -69,3 +69,46 @@ export const MemberFormSchema = z.object({
   weight: zNonNegativeMoneyString.optional(),
 });
 export type MemberFormInput = z.infer<typeof MemberFormSchema>;
+
+/**
+ * 從 <form> 的 FormData 組出 TripFormSchema 能解析的形狀。
+ * FixedRatesEditor 用重複的 `fixedRates.currency` / `fixedRates.rate`
+ * 欄位名渲染動態列，這裡依索引配對回陣列。
+ */
+export function parseTripFormData(formData: FormData): unknown {
+  const currencies = formData.getAll("fixedRates.currency");
+  const rates = formData.getAll("fixedRates.rate");
+  const fixedRates = currencies
+    .map((currency, index) => ({ currency, rate: rates[index] }))
+    .filter(
+      (row): row is { currency: string; rate: string } =>
+        typeof row.currency === "string" &&
+        row.currency.trim() !== "" &&
+        typeof row.rate === "string" &&
+        row.rate.trim() !== "",
+    );
+
+  return {
+    name: formData.get("name"),
+    startDate: formData.get("startDate"),
+    endDate: formData.get("endDate"),
+    homeCurrency: formData.get("homeCurrency"),
+    fixedRates,
+  };
+}
+
+/** 空白列（新增列但未填值）在送出前先過濾掉，讓「刪除一列」等同不送出它 */
+export function parseGroupFormData(formData: FormData): unknown {
+  return { tripId: formData.get("tripId"), name: formData.get("name") };
+}
+
+export function parseMemberFormData(formData: FormData): unknown {
+  const groupId = formData.get("groupId");
+  const weight = formData.get("weight");
+  return {
+    tripId: formData.get("tripId"),
+    name: formData.get("name"),
+    groupId: typeof groupId === "string" && groupId !== "" ? groupId : null,
+    weight: typeof weight === "string" && weight !== "" ? weight : undefined,
+  };
+}
