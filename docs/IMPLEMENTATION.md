@@ -61,9 +61,21 @@ dochuki/
 
 ## 4. 資料模型（Prisma schema 全文）
 
+> **Prisma 7 實作要點**（2026-08-24 P1 落地時修正）
+> 1. `prisma-client-js` 已棄用，實際 generator 為 `prisma-client` 且 `output` 為必填。
+> 2. `datasource` 不再寫 `url`，改由 `prisma.config.ts` 提供（該檔需 `dotenv` devDependency）。
+> 3. **Rust-free client 必須搭配 driver adapter**，`new PrismaClient()` 不能直接連線：
+>    需 `@prisma/adapter-pg`，以 `new PrismaClient({ adapter: new PrismaPg({ connectionString }) })` 建立。
+> 4. Prisma 回傳的 Decimal 是它自己的 decimal.js 實例（precision 20），與本專案的
+>    `Money`（precision 40）不同建構子。**讀寫一律經 `src/lib/money/fromDb.ts`**，
+>    詳見本節末「DB 邊界精度」。
+
 ```prisma
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+datasource db { provider = "postgresql" }
 
 enum SplitMode  { EQUAL WEIGHT EXACT BY_GROUP }
 enum FundType   { CONTRIBUTION SPEND }
@@ -77,6 +89,13 @@ model Trip {
   endDate      DateTime
   homeCurrency String   @default("TWD")
   fixedRates   Json?    // {"JPY": "0.25"} 幣別→記帳幣固定匯率
+  // ★ 待決定（P1 發現的缺口，尚未實作）：個人消費預估目前無落地欄位。
+  //   迴歸案例的「35,000 TWD/人」只存在 fixtures/niigata/input.json，而 §7 的
+  //   PDF「區塊三個人消費」與 CLAUDE.md 的「個人消費額度追蹤」都需要它。
+  //   兩個選項待拍板：
+  //     (a) 行程層級統一額度  Trip.personalBudgetPerMember Decimal? @db.Decimal(18,6)
+  //     (b) 逐人額度          Member.personalBudget        Decimal? @db.Decimal(18,6)
+  //   (a) 足以支撐迴歸案例；(b) 才能表達每人不同額度。實作前需先決定。
   members      Member[]
   groups       Group[]
   expenses     Expense[]
@@ -195,7 +214,26 @@ model FxRate {
 ```
 
 **分攤引擎規則（`src/lib/money/split.ts`）**：
-EQUAL＝amountHome ÷ 參與人數；WEIGHT＝按 member.weight 比例；EXACT＝直接指定各人金額（總和必須等於 amountHome，否則拒絕）；BY_GROUP＝金額先屬於某 Group，組內均分（機票情境）。所有模式輸出以 2 位小數落地，除不盡的餘數（±0.01×n）加到付款人的 share，保證 Σshares ≡ amountHome。
+EQUAL＝amountHome ÷ 參與人數；WEIGHT＝按 member.weight 比例；EXACT＝直接指定各人金額（總和必須等於 amountHome，否則拒絕）；BY_GROUP＝金額先屬於某 Group，組內均分（機票情境）。所有模式輸出以 **6 位小數**落地，除不盡的餘數加到付款人的 share，保證 Σshares ≡ amountHome（嚴格相等，回傳前實際驗證）。
+
+> **為何是 6 位而非原訂的 2 位**（2026-08-24 P1 裁示）
+> 本文件原文寫「以 2 位小數落地」，但該值與 CLAUDE.md 迴歸案例互相矛盾：
+> 住宿B（¥249,821 × 0.25 ÷ 10 人 = **6,245.525**）在 2 位小數下會進位成 6,245.53，
+> 使「每人共同分攤 65,305.025 → 每人總計 73,635 / 72,998 / 76,743 → 全團 741,294.25」
+> 整條斷言鏈失準。6 位小數與 `ExpenseShare.shareHome` 的 `Decimal(18,6)` 欄位一致，
+> 且實測讓全部迴歸斷言吻合。2 位小數降級為**顯示／匯出層**的職責（`round.ts`），
+> 對應 CLAUDE.md 鐵律 3 的「TWD 內部保留 2 位小數」。
+>
+> 尾差量級隨之改變：不再是 ±0.01×n，而是 ≤ n × 0.5 × 10⁻⁶。
+> 實例：機票 G1（49,982 ÷ 6）餘 0.000002 歸付款人；住宿B 餘 0。
+
+**DB 邊界精度（`src/lib/money/fromDb.ts`）**：schema 有三種小數位數，寫入必須用對應函式，不得直接 `.toString()`，也不把捨入交給 PostgreSQL 隱式處理。讀取一律先 `fromDb()` 正規化才運算。
+
+| 用途 | 欄位 | 型別 | 寫入函式 |
+|---|---|---|---|
+| 金額 | `amountOriginal` / `amountHome` / `shareHome` / `FundEntry.amount` / `LineItem.unitPrice` / `LineItem.amount` | `Decimal(18,6)` | `toDbAmount()` |
+| 匯率 | `Expense.rateUsed` / `FxRate.rate` | `Decimal(18,8)` | `toDbRate()` |
+| 係數 | `Member.weight` / `LineItem.qty` / `LineItem.taxRate` | `Decimal(8,4)` / `(12,4)` / `(6,4)` | `toDbFactor()` |
 
 ## 5. 收據解析（核心功能）
 
@@ -287,11 +325,31 @@ Rules:
 | P3 報表與公費 | CSV/xlsx/PDF、公費池、匯率 | 一鍵產出三檔且數字互相一致；PDF 版型含縮圖索引；公費餘額 = Σ提撥−Σ支用 |
 | P4 強化 | PaddleOCR sidecar、離線、清償 | 低信心才走 LLM，單張均攤成本下降；斷網入帳恢復後自動補傳 |
 
+> **★ 待釐清：本表與 `docs/PROMPTS.md` 的階段編號／範圍不一致**（2026-08-24 發現，尚未裁示）
+> 1. **CRUD 歸屬**：本表把「CRUD」列在 P1，但 PROMPTS.md §P1 的範圍與完成定義都不含 CRUD
+>    （§P1 只有 schema、`money/` 模組、seed、迴歸測試、分攤測試）。實際 P1 交付依 §P1 執行，
+>    未含 CRUD。
+> 2. **解析階段編號**：本表與 CLAUDE.md 的「Phase 2」是拍照解析，但 PROMPTS.md 的
+>    **§P2 是「記帳 CRUD 與多幣別 UI」**、解析在 §P3，之後全部順延一號。
+>
+> 三份文件需對齊。建議以 PROMPTS.md 的順序為準（CRUD 先於解析——解析的終點是建立
+> Expense，沒有 CRUD 與確認頁，解析結果無處落地），並據此修正本表與 CLAUDE.md 的勾選項。
+
 ## 10. 環境變數
 
 ```
-DATABASE_URL=postgresql://dochuki:dochuki@localhost:5432/dochuki
+DATABASE_URL=postgresql://dochuki:dochuki@localhost:5442/dochuki
 ANTHROPIC_API_KEY=sk-ant-...
-RECEIPT_STORAGE_DIR=/data/receipts
+RECEIPT_STORAGE_DIR=./data/receipts
 FX_API_BASE=https://api.frankfurter.dev
 ```
+
+> **本機實作差異**（2026-08-24 P0/P1 落地時修正，權威值見專案內 `.env.example`）
+> - **連接埠 5442**（原訂 5432）：開發機的 5432 已被既有的 PostgreSQL 18 Windows 服務
+>   （`postgresql-x64-18`，開機自啟）占用，compose 無法綁定，且 prisma migrate 會連到
+>   該服務並以 `P1000` 認證失敗告終。容器對外改映射 5442，容器內仍為標準 5432，
+>   既有服務不受影響、無需停用。
+> - **`RECEIPT_STORAGE_DIR` 改用相對路徑**：`/data/receipts` 在 Windows 會解析到
+>   `C:\data\receipts`。容器／正式環境仍用絕對路徑 `/data/receipts`。
+> - **專案路徑不可含非 ASCII 字元**：pnpm 在中文路徑下安裝會於寫入 virtual store
+>   階段硬當機（`0xC0000409`），無設定可繞過。專案因此置於 `OneDrive\dev\dochuki`。
