@@ -1,12 +1,14 @@
 # pnpm 10 起，設定由 .npmrc 移到本檔（https://pnpm.io/settings）。
 
 # pnpm 預設封鎖套件的安裝腳本，需逐一放行。
-# 以下四項皆為本專案技術棧的必要組成：
+# 以下皆為本專案技術棧的必要組成：
 #   @prisma/engines, prisma  — 取得 Prisma query engine 執行檔
+#   esbuild                  — tsx 的底層，用於執行 prisma/seed.ts
 #   sharp                    — Next.js 圖片最佳化
 #   unrs-resolver            — eslint-config-next 的模組解析原生繫結
 allowBuilds:
   "@prisma/engines": true
+  esbuild: true
   prisma: true
   sharp: true
   unrs-resolver: true

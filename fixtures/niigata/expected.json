@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "新潟・佐渡 10 人團的期望值。來源＝CLAUDE.md「永久迴歸案例」表列，是真實行程的正確答案。",
+    "★ 禁止為了讓測試通過而修改本檔任何數值（見 .claude/commands/regression.md）。",
+    "標記 CLAUDE.md 的欄位為憲法直接列出的斷言；其餘為推導中間值，用於失敗時定位。"
+  ],
+
+  "rateUsed": { "JPY": "0.25", "TWD": "1" },
+
+  "expenseAmountHome": {
+    "e-car": "61525",
+    "e-ferry": "34570",
+    "e-lodge-a": "55000",
+    "e-lodge-b": "62455.25",
+    "e-insurance": "14500",
+    "e-air-g1": "49982",
+    "e-air-g2": "15386",
+    "e-air-g3": "22876"
+  },
+
+  "lodgeBPerRoom": "83273.666667",
+
+  "commonTotalHome": "228050.25",
+  "perMemberCommonShare": "22805.025",
+  "fundPerMemberHome": "7500",
+  "personalPerMemberHome": "35000",
+
+  "perMemberExFlight": "65305.025",
+  "_perMemberExFlightNote": "CLAUDE.md「每人共同分攤（不含機票，精確）」。組成＝真共同項 22,805.025 ＋ 公費 7,500 ＋ 個人消費 35,000。",
+
+  "flightPerMember": {
+    "g1": "8330.333333",
+    "g2": "7693",
+    "g3": "11438"
+  },
+  "_flightG1Note": "49,982 ÷ 6 在 6 位小數下除不盡，餘 0.000002 依鐵律 4 歸付款人 m01。",
+
+  "perMemberTotalDisplay": {
+    "g1": "73635",
+    "g2": "72998",
+    "g3": "76743"
+  },
+  "_perMemberTotalDisplayNote": "CLAUDE.md「每人總計 G1 / G2 / G3（顯示值，HALF_UP 取整）」。",
+
+  "grandTotalExact": "741294.25",
+  "grandTotalDisplay": "741294",
+  "grandTotalJpyEquivalent": "2965177",
+  "_grandTotalNote": "CLAUDE.md「全團 10 人合計（精確 / 顯示）」與 ¥2,965,177 交叉驗證。",
+
+  "expenseTotalHome": "316294.25",
+  "fundTotalHome": "75000",
+  "personalTotalHome": "350000",
+  "crossCheckDifference": "0",
+  "_crossCheckNote": "CLAUDE.md「交叉驗證：逐人加總 ≡ 分類加總，差額為 0」。分類加總＝316,294.25 ＋ 75,000 ＋ 350,000。"
+}

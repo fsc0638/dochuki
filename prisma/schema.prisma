@@ -1,7 +1,10 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// 道中記 Dōchūki 資料模型
+// 依 docs/IMPLEMENTATION.md §4 實作。
+//
+// 與 §4 記載的差異（Prisma 7 強制）：
+//   §4 寫 `provider = "prisma-client-js"`，但 Prisma 7 已棄用該 generator，
+//   實際可用者為 `prisma-client` 且 `output` 為必填。
+//   datasource 的 url 亦改由 prisma.config.ts 提供。
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +13,154 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum SplitMode {
+  EQUAL
+  WEIGHT
+  EXACT
+  BY_GROUP
+}
+
+enum FundType {
+  CONTRIBUTION
+  SPEND
+}
+
+enum RateSource {
+  TRIP_FIXED
+  DAILY_REF
+  MANUAL
+}
+
+enum ParseEngine {
+  LLM_VISION
+  PADDLE_OCR
+  MANUAL
+}
+
+model Trip {
+  id           String    @id @default(cuid())
+  name         String
+  startDate    DateTime
+  endDate      DateTime
+  homeCurrency String    @default("TWD")
+  fixedRates   Json? // {"JPY": "0.25"} 幣別→記帳幣固定匯率
+  members      Member[]
+  groups       Group[]
+  expenses     Expense[]
+  funds        Fund[]
+  createdAt    DateTime  @default(now())
+}
+
+model Group {
+  id      String   @id @default(cuid())
+  tripId  String
+  trip    Trip     @relation(fields: [tripId], references: [id])
+  name    String // 銀髮組 / 夫妻組 / 兄弟組…
+  members Member[]
+}
+
+model Member {
+  id          String         @id @default(cuid())
+  tripId      String
+  trip        Trip           @relation(fields: [tripId], references: [id])
+  groupId     String?
+  group       Group?         @relation(fields: [groupId], references: [id])
+  name        String
+  weight      Decimal        @default(1) @db.Decimal(8, 4)
+  shares      ExpenseShare[]
+  paid        Expense[]      @relation("payer")
+  fundEntries FundEntry[]
+}
+
+model Expense {
+  id             String         @id @default(cuid())
+  tripId         String
+  trip           Trip           @relation(fields: [tripId], references: [id])
+  payerId        String?
+  payer          Member?        @relation("payer", fields: [payerId], references: [id])
+  paidAt         DateTime
+  category       String
+  description    String
+  currency       String // ISO 4217
+  amountOriginal Decimal        @db.Decimal(18, 6)
+  rateSource     RateSource
+  rateUsed       Decimal        @db.Decimal(18, 8) // 1 原幣 = rateUsed 記帳幣（快照）
+  amountHome     Decimal        @db.Decimal(18, 6) // = amountOriginal × rateUsed
+  splitMode      SplitMode
+  fundSpend      Boolean        @default(false) // true = 由公費支付，不進個人分攤
+  shares         ExpenseShare[]
+  lineItems      LineItem[]
+  receipts       Receipt[]
+  createdAt      DateTime       @default(now())
+
+  @@index([tripId, paidAt])
+}
+
+model ExpenseShare {
+  expenseId String
+  expense   Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member  @relation(fields: [memberId], references: [id])
+  shareHome Decimal @db.Decimal(18, 6) // 記帳幣分攤額（引擎輸出落地）
+
+  @@id([expenseId, memberId])
+}
+
+model LineItem {
+  id        String   @id @default(cuid())
+  expenseId String
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  nameRaw   String // 原文（如日文）
+  nameZh    String? // 譯文
+  qty       Decimal  @db.Decimal(12, 4)
+  unitPrice Decimal  @db.Decimal(18, 6)
+  amount    Decimal  @db.Decimal(18, 6)
+  taxRate   Decimal? @db.Decimal(6, 4) // 0.08 / 0.10
+  category  String?
+}
+
+model Receipt {
+  id         String      @id @default(cuid())
+  expenseId  String?
+  expense    Expense?    @relation(fields: [expenseId], references: [id])
+  imagePath  String // /data/receipts/... 原圖永久保存
+  engine     ParseEngine
+  parseJson  Json? // 解析輸出（§5 schema）
+  confidence Json? // 逐欄信心
+  parsedAt   DateTime?
+  createdAt  DateTime    @default(now())
+}
+
+model Fund {
+  id       String      @id @default(cuid())
+  tripId   String
+  trip     Trip        @relation(fields: [tripId], references: [id])
+  name     String      @default("公費")
+  currency String      @default("JPY")
+  entries  FundEntry[]
+}
+
+model FundEntry {
+  id              String   @id @default(cuid())
+  fundId          String
+  fund            Fund     @relation(fields: [fundId], references: [id])
+  memberId        String?
+  member          Member?  @relation(fields: [memberId], references: [id])
+  type            FundType
+  amount          Decimal  @db.Decimal(18, 6) // 公費幣別
+  linkedExpenseId String?
+  note            String?
+  occurredAt      DateTime @default(now())
+}
+
+model FxRate {
+  date   DateTime
+  base   String
+  quote  String
+  rate   Decimal  @db.Decimal(18, 8)
+  source String // frankfurter / manual
+
+  @@id([date, base, quote])
 }
