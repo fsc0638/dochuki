@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { listTrips } from "@/lib/trips/load";
 
+// 本頁沒有用到 params/searchParams 等動態 API，Next 會把它當靜態頁在 build
+// 當下把行程清單「拍照」凍結——`next start` 之後新建的行程不會出現，除非
+// 重新 build。用 pnpm build 才會現形，pnpm dev 永遠即時渲染看不出來。
+// 行程清單本質上必須即時，強制動態渲染。
+export const dynamic = "force-dynamic";
+
 export default async function TripsPage() {
   const trips = await listTrips();
 

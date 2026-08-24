@@ -81,7 +81,7 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 
 - [x] P0 腳手架（§P0）
 - [x] P1 資料模型、分攤引擎與迴歸測試（§P1）
-- [ ] P2 記帳 CRUD 與多幣別 UI（§P2）
+- [x] P2 記帳 CRUD 與多幣別 UI（§P2）
 - [ ] P3 拍照解析（§P3）
 - [ ] P4 報表輸出（CSV/xlsx/PDF）與公費池（§P4）
 - [ ] P5 PWA 與收尾（§P5）
@@ -90,6 +90,10 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 （完成一項就把勾打上，並在下方追加一行日期＋摘要）
 
 ### 進度日誌
+- 2026-08-24 **P2 完成**：行程/成員/組別/支出 CRUD、匯率三源 UI（TRIP_FIXED 自動套用、MANUAL 手動輸入、DAILY_REF 送出時自動查參考匯率）、支出即時分攤預覽（瀏覽器端直接呼叫與落地時相同的 `money/convert`＋`split`，數字保證一致，已用瀏覽器實測：3000 JPY 預覽 75/人 → 送出後 10 人小計各自精準 +75）。用瀏覽器對 seed 的新潟資料實測整輪 CRUD（新增/編輯/篩選），完成後恢復原始資料，`pnpm test regression` 仍 17 條全綠、DB 實查 741,294.25／741,294／守恆差額 0
+- 2026-08-24 P2 產品範圍裁示：使用者澄清這是「旅途當下」記帳分帳服務、未來要公開給大眾、不侷限單一行程。因此①不加「個人消費預估」欄位——那是新潟預算表的產物非產品功能，旅途消費就是記一筆一人參與的普通支出；P2 完成定義相應改為「總覽頁每人**分攤小計**」而非含預算的迴歸總額 73,635 ②暫不做帳號系統（Trip 無 ownerId），但所有查詢天生 `tripId` scoped、路由都在 `/trips/[id]/...` 下，之後加擁有者是加欄位+守門、不必重寫
+- 2026-08-24 P2 實測抓到並修正兩個問題：①`MemberItem` 把 `<DeleteButton>`（內部含 `<form>`）塞進更新表單裡，`<form>` 巢狀 `<form>` 導致 hydration 崩潰，改成兩個平行表單 ②`pnpm build` 顯示 `/trips` 被判定為靜態頁、build 當下把行程清單拍照凍結——`next start` 後新行程不會出現，`pnpm dev` 完全看不出來，加 `export const dynamic = "force-dynamic"` 修正。兩者都提醒：CRUD 頁面完工要跑一次 `pnpm build`＋瀏覽器實測，不能只看 lint/typecheck/test 過
+- 2026-08-24 P2 已知限制（寫在對應程式碼註解裡，非遺漏）：EQUAL/WEIGHT 模式付款人必須在分攤名單內，無法表達「代墊但不參與」；BY_GROUP 因 schema 未存 groupId，編輯既有支出靠現有組別成員名單反推當初選的組別，組別異動後可能推不出來；`paidAt` 用 `<input type="datetime-local">`（無時區資訊），伺服器以其執行環境的本機時區解析——單機使用沒問題，未來多時區公開服務需要重新設計這段
 - 2026-08-24 專案文件初始化（CLAUDE.md / IMPLEMENTATION.md / PROMPTS.md）
 - 2026-08-24 專案定名「道中記 Dōchūki」（repo：dochuki），已查證 App 商店與常見命名空間無衝突
 - 2026-08-24 Phase 0 腳手架完成：Next.js 15.5.23 + TS strict + Tailwind 4 + pnpm 11、Prisma 7.9.1（空 schema）、vitest 4、docker-compose（postgres:16）、§3 目錄骨架、README。lint／typecheck／test 全綠
