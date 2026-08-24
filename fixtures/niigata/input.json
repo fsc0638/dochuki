@@ -1,0 +1,129 @@
+{
+  "_comment": [
+    "新潟・佐渡 10 人團永久迴歸案例輸入。期望值見 expected.json。",
+    "本檔同時作為 prisma/seed.ts 與 tests/money.regression.test.ts 的單一事實來源。",
+    "所有金額一律以字串表示——JSON number 是 IEEE 754 浮點數，用它承載金額違反 CLAUDE.md 鐵律 1。",
+    "團員姓名為佔位值：真實姓名屬個人資料，不進版控。"
+  ],
+  "trip": {
+    "id": "trip-niigata-2026",
+    "_idComment": "固定 id：讓 prisma/seed.ts 只清除並重建本行程的資料，不必清空整個資料庫。",
+    "name": "新潟・佐渡 10 人團",
+    "startDate": "2026-09-12T00:00:00.000+09:00",
+    "endDate": "2026-09-16T00:00:00.000+09:00",
+    "homeCurrency": "TWD",
+    "fixedRates": { "JPY": "0.25" }
+  },
+  "groups": [
+    { "id": "g1", "name": "銀髮組" },
+    { "id": "g2", "name": "夫妻組" },
+    { "id": "g3", "name": "兄弟組" }
+  ],
+  "members": [
+    { "id": "m01", "name": "團員01", "groupId": "g1" },
+    { "id": "m02", "name": "團員02", "groupId": "g1" },
+    { "id": "m03", "name": "團員03", "groupId": "g1" },
+    { "id": "m04", "name": "團員04", "groupId": "g1" },
+    { "id": "m05", "name": "團員05", "groupId": "g1" },
+    { "id": "m06", "name": "團員06", "groupId": "g1" },
+    { "id": "m07", "name": "團員07", "groupId": "g2" },
+    { "id": "m08", "name": "團員08", "groupId": "g2" },
+    { "id": "m09", "name": "團員09", "groupId": "g3" },
+    { "id": "m10", "name": "團員10", "groupId": "g3" }
+  ],
+  "expenses": [
+    {
+      "id": "e-car",
+      "description": "租車",
+      "category": "交通",
+      "paidAt": "2026-09-12T10:00:00.000+09:00",
+      "currency": "JPY",
+      "amountOriginal": "246100",
+      "splitMode": "EQUAL",
+      "payerId": "m01"
+    },
+    {
+      "id": "e-ferry",
+      "description": "佐渡汽船渡輪",
+      "category": "交通",
+      "paidAt": "2026-09-13T08:30:00.000+09:00",
+      "currency": "JPY",
+      "amountOriginal": "138280",
+      "splitMode": "EQUAL",
+      "payerId": "m01"
+    },
+    {
+      "id": "e-lodge-a",
+      "description": "住宿A",
+      "category": "住宿",
+      "paidAt": "2026-09-13T16:00:00.000+09:00",
+      "currency": "JPY",
+      "amountOriginal": "220000",
+      "splitMode": "EQUAL",
+      "payerId": "m01"
+    },
+    {
+      "id": "e-lodge-b",
+      "description": "住宿B（3 間 × ¥83,273.666̄）",
+      "category": "住宿",
+      "paidAt": "2026-09-14T16:00:00.000+09:00",
+      "currency": "JPY",
+      "amountOriginal": "249821",
+      "splitMode": "EQUAL",
+      "payerId": "m01"
+    },
+    {
+      "id": "e-insurance",
+      "description": "旅遊保險",
+      "category": "雜項",
+      "paidAt": "2026-09-10T09:00:00.000+08:00",
+      "currency": "TWD",
+      "amountOriginal": "14500",
+      "splitMode": "EQUAL",
+      "payerId": "m01"
+    },
+    {
+      "id": "e-air-g1",
+      "description": "機票（銀髮組 6 人）",
+      "category": "交通",
+      "paidAt": "2026-08-01T09:00:00.000+08:00",
+      "currency": "TWD",
+      "amountOriginal": "49982",
+      "splitMode": "BY_GROUP",
+      "groupId": "g1",
+      "payerId": "m01"
+    },
+    {
+      "id": "e-air-g2",
+      "description": "機票（夫妻組 2 人）",
+      "category": "交通",
+      "paidAt": "2026-08-01T09:00:00.000+08:00",
+      "currency": "TWD",
+      "amountOriginal": "15386",
+      "splitMode": "BY_GROUP",
+      "groupId": "g2",
+      "payerId": "m07"
+    },
+    {
+      "id": "e-air-g3",
+      "description": "機票（兄弟組 2 人）",
+      "category": "交通",
+      "paidAt": "2026-08-01T09:00:00.000+08:00",
+      "currency": "TWD",
+      "amountOriginal": "22876",
+      "splitMode": "BY_GROUP",
+      "groupId": "g3",
+      "payerId": "m09"
+    }
+  ],
+  "fund": {
+    "name": "公費",
+    "currency": "JPY",
+    "contributionPerMember": "30000"
+  },
+  "personalBudget": {
+    "_comment": "個人消費預估。docs/IMPLEMENTATION.md §4 的 schema 目前沒有對應欄位，P3 報表「區塊三個人消費」需要它，屬待補的規格缺口。",
+    "currency": "TWD",
+    "perMember": "35000"
+  }
+}

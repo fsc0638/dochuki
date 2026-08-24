@@ -76,7 +76,7 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 ## 目前進度
 
 - [x] Phase 0 腳手架與 schema（docs/PROMPTS.md §P0–P1）
-- [ ] Phase 1 記帳核心＋迴歸測試綠燈
+- [x] Phase 1 記帳核心＋迴歸測試綠燈
 - [ ] Phase 2 拍照解析
 - [ ] Phase 3 報表（CSV/xlsx/PDF）與公費池
 - [ ] Phase 4 自架 OCR、離線佇列、清償計畫
@@ -89,4 +89,7 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 - 2026-08-24 Phase 0 腳手架完成：Next.js 15.5.23 + TS strict + Tailwind 4 + pnpm 11、Prisma 7.9.1（空 schema）、vitest 4、docker-compose（postgres:16）、§3 目錄骨架、README。lint／typecheck／test 全綠
 - 2026-08-24 專案路徑由 `OneDrive\文件\個人研發專案\dochuki-kit` 移至 `OneDrive\dev\dochuki`。原因：pnpm 在含非 ASCII 字元的路徑下安裝必定崩潰（0xC0000409，崩於寫入 virtual store 階段）。已實測排除 OneDrive、pnpm 版本、MAX_PATH、Node 版本四項因素，唯一變因為路徑中的中文字。新路徑仍在 OneDrive 內正常同步
 - 2026-08-24 **待辦（P1 動 schema 時處理）**：Prisma 7 已棄用 `prisma-client-js`，實際產生的 generator 為 `prisma-client` 且 `output` 為必填。IMPLEMENTATION.md §4 的 generator 區塊需同步更新
+- 2026-08-24 **Phase 1 完成**：schema 依 §4 落地並 migrate（`20260824053527_init`）、`src/lib/money/` 五模組、新潟 fixture 與 seed、82 條測試全綠（迴歸 17 條）、`/money-audit` 無違規。DB 實查亦重現全部斷言（741,294.25／741,294／¥2,965,177，逐筆守恆差額 0）
+- 2026-08-24 **P1 裁示（規格衝突）**：IMPLEMENTATION.md §4「所有模式輸出以 2 位小數落地」與迴歸期望值矛盾——住宿B（¥249,821×0.25÷10＝6,245.525）在 2dp 下進位成 6,245.53，使「每人共同分攤 65,305.025」等斷言全部失準。已改為 **6 位小數落地**（與 `Decimal(18,6)` 欄位一致），2dp 降級為顯示／匯出層職責。§4 該句需同步更正
+- 2026-08-24 **P1 新增規格待補**：①「每人共同分攤 65,305.025」實際組成含公費 7,500 與個人消費 35,000，名稱易誤導 ②個人消費預估在 §4 schema 無對應欄位，P3 報表「區塊三個人消費」需要它 ③Prisma 7 的 Rust-free client 必須搭配 driver adapter（`@prisma/adapter-pg`），P2 需抽共用 client 模組 ④Prisma 回傳的 Decimal 精度為 20 位、與本專案 Money 的 40 位不同，讀取邊界應先 `new Money(x.toString())` 正規化
 - 2026-08-24 Docker Desktop 安裝完成，P0 完成定義全數驗證通過：容器 `dochuki-db`（postgres:16）healthy、`prisma migrate dev` 連線成功、實測寫入讀回 `numeric(18,6)` 精度與中文均正確。**本機 5432 已被既有的 PostgreSQL 18 Windows 服務（`postgresql-x64-18`，開機自啟）占用，故容器對外映射改為 5442**，`DATABASE_URL` 同步改為 `localhost:5442`；此處偏離 IMPLEMENTATION.md §10 記載的 5432，§10 需同步更新
