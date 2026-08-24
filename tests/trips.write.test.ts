@@ -343,6 +343,216 @@ describe("trips/write · trips/load", () => {
     });
   });
 
+  describe("createExpense · receiptContext（P3 拍照解析）", () => {
+    it("建立 LineItem 並把 Receipt 綁回這筆 Expense", async () => {
+      const receipt = await prisma.receipt.create({
+        data: { imagePath: "test-fixture.jpg", engine: "LLM_VISION" },
+      });
+
+      const expense = await createExpense(
+        {
+          tripId,
+          description: "7-11",
+          category: "餐飲",
+          paidAt: "2026-09-02T09:00:00+08:00",
+          currency: "TWD",
+          amountOriginal: "150",
+          payerId: m1,
+          splitMode: "EQUAL",
+          participantIds: [m1, m2],
+        },
+        {
+          receiptId: receipt.id,
+          lineItems: [
+            {
+              nameRaw: "おにぎり",
+              nameZh: "飯糰",
+              qty: 2,
+              unitPrice: 50,
+              amount: 100,
+              taxRate: 0.08,
+              category: "餐飲",
+            },
+            {
+              // unitPrice 為 null：驗證 amount÷qty 推算（50 ÷ 1 = 50）
+              nameRaw: "お茶",
+              nameZh: "茶",
+              qty: 1,
+              unitPrice: null,
+              amount: 50,
+              taxRate: null,
+              category: "餐飲",
+            },
+          ],
+        },
+      );
+
+      const lineItems = await prisma.lineItem.findMany({
+        where: { expenseId: expense.id },
+        orderBy: { nameRaw: "asc" },
+      });
+      expect(lineItems).toHaveLength(2);
+
+      const onigiri = lineItems.find((item) => item.nameRaw === "おにぎり");
+      expect(fromDb(onigiri!.qty).toString()).toBe("2");
+      expect(fromDb(onigiri!.unitPrice).toString()).toBe("50");
+      expect(fromDb(onigiri!.taxRate!).toString()).toBe("0.08");
+
+      const ocha = lineItems.find((item) => item.nameRaw === "お茶");
+      expect(fromDb(ocha!.unitPrice).toString()).toBe("50"); // 推算值
+      expect(ocha!.taxRate).toBeNull();
+
+      const updatedReceipt = await prisma.receipt.findUniqueOrThrow({
+        where: { id: receipt.id },
+      });
+      expect(updatedReceipt.expenseId).toBe(expense.id);
+
+      await deleteExpense(expense.id);
+      await prisma.receipt.delete({ where: { id: receipt.id } });
+    });
+
+    it("lineItems 為空陣列：不建任何 LineItem，但仍綁回 Receipt", async () => {
+      const receipt = await prisma.receipt.create({
+        data: { imagePath: "test-fixture-2.jpg", engine: "LLM_VISION" },
+      });
+
+      const expense = await createExpense(
+        {
+          tripId,
+          description: "解析失敗但確認的支出",
+          category: "雜項",
+          paidAt: "2026-09-02T09:00:00+08:00",
+          currency: "TWD",
+          amountOriginal: "100",
+          payerId: m1,
+          splitMode: "EQUAL",
+          participantIds: [m1, m2],
+        },
+        { receiptId: receipt.id, lineItems: [] },
+      );
+
+      const lineItems = await prisma.lineItem.findMany({ where: { expenseId: expense.id } });
+      expect(lineItems).toHaveLength(0);
+      const updatedReceipt = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
+      expect(updatedReceipt.expenseId).toBe(expense.id);
+
+      await deleteExpense(expense.id);
+      await prisma.receipt.delete({ where: { id: receipt.id } });
+    });
+
+    it("未提供 receiptContext（一般手動輸入）：不影響既有行為，無 LineItem", async () => {
+      const expense = await createExpense({
+        tripId,
+        description: "手動輸入",
+        category: "雜項",
+        paidAt: "2026-09-02T09:00:00+08:00",
+        currency: "TWD",
+        amountOriginal: "100",
+        payerId: m1,
+        splitMode: "EQUAL",
+        participantIds: [m1, m2],
+      });
+      const lineItems = await prisma.lineItem.findMany({ where: { expenseId: expense.id } });
+      expect(lineItems).toHaveLength(0);
+      await deleteExpense(expense.id);
+    });
+
+    it("unitPrice 推算除不盡時精確到 6 位小數，不是裸浮點誤差（1000÷3）", async () => {
+      const receipt = await prisma.receipt.create({
+        data: { imagePath: "test-fixture-3.jpg", engine: "LLM_VISION" },
+      });
+      const expense = await createExpense(
+        {
+          tripId,
+          description: "除不盡測試",
+          category: "餐飲",
+          paidAt: "2026-09-02T09:00:00+08:00",
+          currency: "TWD",
+          amountOriginal: "1000",
+          payerId: m1,
+          splitMode: "EQUAL",
+          participantIds: [m1, m2],
+        },
+        {
+          receiptId: receipt.id,
+          lineItems: [
+            {
+              nameRaw: "無單價品項",
+              nameZh: null,
+              qty: 3,
+              unitPrice: null, // 逼推算路徑：1000 ÷ 3
+              amount: 1000,
+              taxRate: null,
+              category: null,
+            },
+          ],
+        },
+      );
+      const lineItem = await prisma.lineItem.findFirstOrThrow({
+        where: { expenseId: expense.id },
+      });
+      // 1000 ÷ 3 精確值為 333.333333...，Decimal(18,6) 下 HALF_UP 收斂到 6 位
+      expect(fromDb(lineItem.unitPrice).toString()).toBe("333.333333");
+
+      await deleteExpense(expense.id);
+      await prisma.receipt.delete({ where: { id: receipt.id } });
+    });
+
+    it("同一張收據重複送出（雙擊/瀏覽器上一頁後重送）：第二次拒絕，不建出重複支出", async () => {
+      const receipt = await prisma.receipt.create({
+        data: { imagePath: "test-fixture-4.jpg", engine: "LLM_VISION" },
+      });
+      const input = {
+        tripId,
+        description: "重複送出測試",
+        category: "雜項",
+        paidAt: "2026-09-02T09:00:00+08:00",
+        currency: "TWD",
+        amountOriginal: "100",
+        payerId: m1,
+        splitMode: "EQUAL" as const,
+        participantIds: [m1, m2],
+      };
+      const receiptContext = { receiptId: receipt.id, lineItems: [] };
+
+      const first = await createExpense(input, receiptContext);
+      await expect(createExpense(input, receiptContext)).rejects.toThrow(
+        "這張收據已經建立過支出，請勿重複送出",
+      );
+
+      // 第二次失敗不該留下任何痕跡：只有第一筆支出、Receipt 仍指向它
+      const expenseCount = await prisma.expense.count({ where: { description: "重複送出測試" } });
+      expect(expenseCount).toBe(1);
+      const updatedReceipt = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
+      expect(updatedReceipt.expenseId).toBe(first.id);
+
+      await deleteExpense(first.id);
+      await prisma.receipt.delete({ where: { id: receipt.id } });
+    });
+
+    it("receiptId 指向不存在的收據：拒絕並給友善訊息，不建立支出", async () => {
+      await expect(
+        createExpense(
+          {
+            tripId,
+            description: "指向不存在收據",
+            category: "雜項",
+            paidAt: "2026-09-02T09:00:00+08:00",
+            currency: "TWD",
+            amountOriginal: "100",
+            payerId: m1,
+            splitMode: "EQUAL",
+            participantIds: [m1, m2],
+          },
+          { receiptId: "cnonexistent00000000000000", lineItems: [] },
+        ),
+      ).rejects.toThrow("找不到這張收據，可能已被刪除");
+
+      const count = await prisma.expense.count({ where: { description: "指向不存在收據" } });
+      expect(count).toBe(0);
+    });
+  });
+
   describe("deleteMember · 外鍵保護", () => {
     it("成員已有分攤紀錄：拒絕刪除並給友善訊息", async () => {
       const expense = await createExpense({

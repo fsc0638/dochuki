@@ -82,7 +82,7 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 - [x] P0 腳手架（§P0）
 - [x] P1 資料模型、分攤引擎與迴歸測試（§P1）
 - [x] P2 記帳 CRUD 與多幣別 UI（§P2）
-- [ ] P3 拍照解析（§P3）
+- [x] P3 拍照解析（§P3，驗收細節見下方日誌——完成定義有一項需使用者親自補測）
 - [ ] P4 報表輸出（CSV/xlsx/PDF）與公費池（§P4）
 - [ ] P5 PWA 與收尾（§P5）
 - [ ] P6 強化：自架 OCR sidecar、離線佇列、清償計畫（PROMPTS.md 無對應段落，見 IMPLEMENTATION.md §9）
@@ -90,6 +90,11 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 （完成一項就把勾打上，並在下方追加一行日期＋摘要）
 
 ### 進度日誌
+- 2026-08-24 **P3 完成**：拍照/選圖 → 壓縮＋EXIF → 上傳 → Anthropic Structured Outputs 解析 → 確認頁預填＋confidence<0.8 標紅 → 確認入帳建 Expense+LineItems、回填 Receipt.expenseId → 重新解析。用合成收據圖與手植 DB 資料完整驗證整條管線（無法用真實 API 呼叫測，見下）。101→151 條測試（新增 30 條），regression 17 條不變，`pnpm build` 通過，DB 實查 741,294.25／741,294／守恆差額 0
+- 2026-08-24 P3 兩處與 §5.3 規格不同（載入 claude-api 技能查證後決定）：①模型改用 `claude-sonnet-5`（§5.3 原寫 `claude-sonnet-4-6` 不支援 Structured Outputs）②改用 `client.messages.parse()` + `output_config.format` 取代「提示詞說只准輸出 JSON、自己 parse 再驗」，API 端直接保證格式正確。連帶把 `ReceiptParseSchema.confidence` 從開放式 `z.record()` 改成固定六欄位物件——Structured Outputs 要求所有 object 都要 `additionalProperties:false`，record 天生不相容
+- 2026-08-24 P3 完成定義**有一項做不到，需使用者親自補**：「手機實拍一張日文收據能走完全流程」——沒有真實手機與收據照片，也沒有設定 `ANTHROPIC_API_KEY`。已用合成測試圖驗證上傳／降級路徑（HTTP 200、Receipt 正確存檔），並用手植 DB 資料驗證解析成功後的預填／標紅／LineItem 建立／Receipt 回填全部正確；唯獨「Claude 真的看得懂一張日文收據」這件事未經驗證。`fixtures/receipts/` 同理：結構與 `tests/parse.eval.ts` 已就緒，0 筆真實樣本，`RUN_PARSE_EVAL=1 pnpm test parse.eval` 算不出有意義的數字
+- 2026-08-24 P3 對抗式審查（8 角度平行 agent＋逐一驗證）抓到並修正 3 個真的 bug：①`resolveUnitPrice` 用裸 JS float 除法算金額，違反金額鐵律 1（改用 `Money().dividedBy()`，一併拿掉多餘的 `receiptNumberToDb` 間接層）②`reparseReceiptAction` 寫好但沒接任何按鈕，「重新解析」功能形同不存在（補 UI 按鈕，並補齊它原本缺的 ActionState 錯誤處理慣例）③同一張收據可被重複送出建出兩筆支出、Receipt.expenseId 只會指向較晚寫入那筆，第一筆的收據關聯悄悄弄丟（在交易外先查 `Receipt.expenseId` 是否已非 null，非法時清楚拒絕）。三者皆已用真實瀏覽器操作＋新增測試驗證修好
+- 2026-08-24 P3 已知限制（記錄但未修，等公開服務／多人共編需求明確時再處理）：`loadReceipt` 依 receiptId 全域查找、未驗證是否屬於當前 tripId——目前僅靠 cuid 不可猜測性防護，若使用者同時開著兩個行程分頁，理論上可把 A 行程的收據網址帶進 B 行程消費掉其品項與金額；LineItem 目前無使用者複查/編輯介面，confidence 低的品項會直接原樣入庫，只有 Expense 層級的四個欄位（店名/日期/金額/幣別）會標紅
 - 2026-08-24 **P2 完成**：行程/成員/組別/支出 CRUD、匯率三源 UI（TRIP_FIXED 自動套用、MANUAL 手動輸入、DAILY_REF 送出時自動查參考匯率）、支出即時分攤預覽（瀏覽器端直接呼叫與落地時相同的 `money/convert`＋`split`，數字保證一致，已用瀏覽器實測：3000 JPY 預覽 75/人 → 送出後 10 人小計各自精準 +75）。用瀏覽器對 seed 的新潟資料實測整輪 CRUD（新增/編輯/篩選），完成後恢復原始資料，`pnpm test regression` 仍 17 條全綠、DB 實查 741,294.25／741,294／守恆差額 0
 - 2026-08-24 P2 產品範圍裁示：使用者澄清這是「旅途當下」記帳分帳服務、未來要公開給大眾、不侷限單一行程。因此①不加「個人消費預估」欄位——那是新潟預算表的產物非產品功能，旅途消費就是記一筆一人參與的普通支出；P2 完成定義相應改為「總覽頁每人**分攤小計**」而非含預算的迴歸總額 73,635 ②暫不做帳號系統（Trip 無 ownerId），但所有查詢天生 `tripId` scoped、路由都在 `/trips/[id]/...` 下，之後加擁有者是加欄位+守門、不必重寫
 - 2026-08-24 P2 實測抓到並修正兩個問題：①`MemberItem` 把 `<DeleteButton>`（內部含 `<form>`）塞進更新表單裡，`<form>` 巢狀 `<form>` 導致 hydration 崩潰，改成兩個平行表單 ②`pnpm build` 顯示 `/trips` 被判定為靜態頁、build 當下把行程清單拍照凍結——`next start` 後新行程不會出現，`pnpm dev` 完全看不出來，加 `export const dynamic = "force-dynamic"` 修正。兩者都提醒：CRUD 頁面完工要跑一次 `pnpm build`＋瀏覽器實測，不能只看 lint/typecheck/test 過

@@ -298,9 +298,25 @@ Rules:
 
 呼叫端（`src/lib/parse/anthropic.ts`）：`POST https://api.anthropic.com/v1/messages`，模型建議 `claude-sonnet-4-6`（品質/成本平衡；量大或簡單超商收據可降 `claude-haiku-4-5`），`ANTHROPIC_API_KEY` 走環境變數，圖片以 base64 附上，`max_tokens: 2000`，回傳過 zod，失敗重試一次後降級為手動輸入模式。
 
+> **2026-08-24 P3 落地時修正**（載入 `claude-api` 技能查證後決定）
+> 1. **模型**：`claude-sonnet-4-6` 不支援下一點的 Structured Outputs，改用同世代、有支援的
+>    `claude-sonnet-5`（模型字串已抽成常數，之後要接「量大降級 haiku」的路由邏輯不必動呼叫端其餘程式碼；
+>    該自動路由本階段未實作——判不出「先看過才知道是簡單收據」的觸發條件，非疏漏）。
+> 2. **呼叫方式**：改用 `client.messages.parse()` + `output_config: { format: zodOutputFormat(...) }`
+>    （Structured Outputs），不是「提示詞說只准輸出 JSON、自己 `JSON.parse` 再驗」。API 端直接保證
+>    回應符合 schema，比賭 Claude 有沒有乖乖聽提示詞可靠。連帶要求 `ReceiptParseSchema.confidence`
+>    從 §5.2 原文的 `z.record(...)` 改成固定六欄位物件——Structured Outputs 要求所有 object 都要
+>    `additionalProperties:false`，開放 key 的 record 天生不相容，改後剛好對齊提示詞規則 9 本來就
+>    寫死的六個 key。
+> 3. **重試**：SDK 本身已對 429/5xx 自動重試（`max_retries` 預設 2）；`parseReceipt()` 的「失敗重試
+>    一次」是應用層再包一層，處理的是 SDK 重試耗盡、schema 驗證不過（`parsed_output: null`）、或安全
+>    分類器拒答（`stop_reason: "refusal"`）這三種情況，兩次都失敗才回 `null` 降級。
+
 ### 5.4 準確率評估
 
-`fixtures/receipts/` 每張圖配一份人工標註 JSON。`pnpm test parse-eval` 計算關鍵欄位（total/datetime/currency/tax_rate）錯誤率與品項召回率；P3 驗收線：30 張實體收據關鍵欄位人工修正率 < 20%。
+`fixtures/receipts/` 每張圖配一份人工標註 JSON。`RUN_PARSE_EVAL=1 pnpm test parse.eval` 計算關鍵欄位（total/datetime/currency/tax_rate）錯誤率與品項召回率；P3 驗收線：30 張實體收據關鍵欄位人工修正率 < 20%。
+
+> **2026-08-24 P3 落地時修正**：測試檔實際檔名為 `tests/parse.eval.ts`（點號分隔，對應本文件 §3 目錄樹），指令原文寫的 `pnpm test parse-eval`（連字號）子字串比對不到這個檔名，vitest 會回報「找不到測試檔」。另外評估腳本每筆樣本都是真實的 Anthropic API 呼叫、會真的花錢，故意加上 `RUN_PARSE_EVAL=1` 才會真的執行，避免被不小心觸發的 `pnpm test` 掃到。
 
 ## 6. 匯率模組
 

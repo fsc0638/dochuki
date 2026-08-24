@@ -3,18 +3,13 @@ import { notFound } from "next/navigation";
 import { deleteExpenseAction, updateExpenseAction } from "@/app/trips/[id]/expenses/actions";
 import { DeleteButton } from "@/components/ui/DeleteButton";
 import { ExpenseForm } from "@/components/expense/ExpenseForm";
+import { toDateTimeLocalValue } from "@/lib/dateTimeLocal";
 import { fromDb } from "@/lib/money/fromDb";
 import {
   inferByGroupSelection,
   loadExpenseForEdit,
   loadTrip,
 } from "@/lib/trips/load";
-
-/** <input type="datetime-local"> 要 YYYY-MM-DDTHH:mm，用本機時間部件組出 */
-function toDateTimeLocalValue(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 
 export default async function EditExpensePage({
   params,

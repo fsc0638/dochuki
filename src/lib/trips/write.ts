@@ -1,5 +1,7 @@
+import type Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
 import { getDailyRate } from "@/lib/fx/frankfurter";
+import { Money } from "@/lib/money/decimal";
 import { convertToHome, resolveRate } from "@/lib/money/convert";
 import { fromDb, toDbAmount, toDbFactor, toDbRate } from "@/lib/money/fromDb";
 import { splitExpense, type SplitParticipant } from "@/lib/money/split";
@@ -285,10 +287,72 @@ function buildParticipants(
   }
 }
 
-/** 建立支出＋分攤明細，同一交易內完成，避免出現「有支出沒分攤」的中間態 */
+/** 拍照解析出的品項，建支出時可一併落地成 LineItem（見 P3 收據解析） */
+export interface ReceiptLineItemInput {
+  nameRaw: string;
+  nameZh: string | null;
+  qty: number;
+  unitPrice: number | null;
+  amount: number;
+  taxRate: number | null;
+  category: string | null;
+}
+
+/**
+ * 「確認入帳」來自收據時的額外落地內容：品項明細＋把 Receipt 與這筆
+ * Expense 綁回去（Receipt.expenseId）。
+ */
+export interface ReceiptContext {
+  receiptId: string;
+  lineItems: ReceiptLineItemInput[];
+}
+
+/**
+ * §5.2 的 unit_price 允許 null（收據讀不到單價欄），但 schema 的
+ * `LineItem.unitPrice` 是必填欄位（§4，未改過）。這不是臨時湊數：
+ * qty 與 amount 都在時，單價的數學定義就是 amount ÷ qty，不算「發明數值」
+ * （提示詞第 2 條禁止的是憑空猜金額，不是算術推導）。
+ *
+ * ★ 除法本身必須經過 Money，不能先用裸 JS number 做 `amount / qty` 再包
+ * 進 Decimal——那樣除法這一步本身就是用 float 表示金錢，違反 CLAUDE.md
+ * 鐵律 1，即使結果馬上被 toDbAmount() 收斂也於事無補（浮點誤差已經在
+ * 除法當下發生）。
+ *
+ * qty/amount 本身仍是 Claude 回應剛解析出來的 JSON number（未經任何運算
+ * 污染，跟 fx/frankfurter.ts 讀 Frankfurter 回應數字同一類），直接餵給
+ * Money 建構子是安全的——不必也不該經過 fromDb()（那是「讀我們自己資料庫」
+ * 的邊界，不是「讀外部 API 回應」的邊界）。
+ */
+function resolveUnitPrice(item: ReceiptLineItemInput): Decimal {
+  if (item.unitPrice !== null) return new Money(item.unitPrice);
+  return new Money(item.amount).dividedBy(item.qty);
+}
+
+/**
+ * 建立支出＋分攤明細，同一交易內完成，避免出現「有支出沒分攤」的中間態。
+ *
+ * receiptContext 存在時，先在交易外確認這張收據還沒被別的支出用掉——
+ * 沒有這道檢查的話，表單重複送出（雙擊、送出後按上一頁再送一次）會對同一張
+ * 收據建出兩筆支出、各自複製一份 LineItem，Receipt.expenseId 最後只會指向
+ * 最後寫入的那筆，等於悄悄弄丟第一筆支出與收據的關聯。放在交易外先查，
+ * 失敗時給清楚訊息，不要讓 Prisma 的 P2025 原始錯誤一路冒到使用者畫面。
+ */
 export async function createExpense(
   input: ExpenseFormInput,
+  receiptContext?: ReceiptContext,
 ): Promise<{ id: string }> {
+  if (receiptContext !== undefined) {
+    const receipt = await prisma.receipt.findUnique({
+      where: { id: receiptContext.receiptId },
+    });
+    if (receipt === null) {
+      throw new Error("找不到這張收據，可能已被刪除");
+    }
+    if (receipt.expenseId !== null) {
+      throw new Error("這張收據已經建立過支出，請勿重複送出");
+    }
+  }
+
   const resolved = await resolveExpense(input);
   const expenseId = await prisma.$transaction(async (tx) => {
     const expense = await tx.expense.create({
@@ -313,6 +377,28 @@ export async function createExpense(
         shareHome: share.shareHome,
       })),
     });
+
+    if (receiptContext !== undefined) {
+      if (receiptContext.lineItems.length > 0) {
+        await tx.lineItem.createMany({
+          data: receiptContext.lineItems.map((item) => ({
+            expenseId: expense.id,
+            nameRaw: item.nameRaw,
+            nameZh: item.nameZh,
+            qty: toDbFactor(item.qty),
+            unitPrice: toDbAmount(resolveUnitPrice(item)),
+            amount: toDbAmount(item.amount),
+            taxRate: item.taxRate === null ? null : toDbFactor(item.taxRate),
+            category: item.category,
+          })),
+        });
+      }
+      await tx.receipt.update({
+        where: { id: receiptContext.receiptId },
+        data: { expenseId: expense.id },
+      });
+    }
+
     return expense.id;
   });
   return { id: expenseId };

@@ -26,6 +26,13 @@ export interface ExpenseFormGroup {
   name: string;
 }
 
+/**
+ * 對應收據解析 confidence 的四個表單欄位。「items」「tax」在 §5.2 是逐一
+ * 品項／稅率的信心，這張表單沒有可以標紅的單一對應欄位（品項本身不在這裡
+ * 編輯），因此不在此列——是刻意的範圍限制，不是漏掉。
+ */
+export type LowConfidenceField = "description" | "paidAt" | "currency" | "amountOriginal";
+
 export interface ExpenseFormInitial {
   description: string;
   category: string;
@@ -56,6 +63,7 @@ export function ExpenseForm({
   groups,
   initial,
   submitLabel,
+  lowConfidenceFields,
 }: {
   action: (prevState: ActionState, formData: FormData) => Promise<ActionState>;
   tripId: string;
@@ -65,8 +73,16 @@ export function ExpenseForm({
   groups: ExpenseFormGroup[];
   initial?: ExpenseFormInitial;
   submitLabel: string;
+  /** 收據解析 confidence < 0.8 的欄位；來自拍照解析時標紅提醒使用者複查 */
+  lowConfidenceFields?: Set<LowConfidenceField>;
 }) {
   const [state, formAction] = useActionState(action, INITIAL_ACTION_STATE);
+
+  function lowConfidenceClass(field: LowConfidenceField): string {
+    return lowConfidenceFields?.has(field) === true
+      ? "border-red-400 bg-red-50"
+      : "";
+  }
 
   const [amountOriginal, setAmountOriginal] = useState(initial?.amountOriginal ?? "");
   const [currency, setCurrency] = useState(initial?.currency ?? homeCurrency);
@@ -190,6 +206,11 @@ export function ExpenseForm({
     <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="tripId" value={tripId} />
       <FormMessage error={state.error} />
+      {lowConfidenceFields !== undefined && lowConfidenceFields.size > 0 && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          紅框欄位是自動辨識信心較低的地方，請確認正確再送出。
+        </p>
+      )}
 
       <Field label="項目說明" htmlFor="description" errors={state.fieldErrors?.description}>
         <input
@@ -198,7 +219,7 @@ export function ExpenseForm({
           type="text"
           required
           defaultValue={initial?.description}
-          className={inputClass}
+          className={`${inputClass} ${lowConfidenceClass("description")}`}
         />
       </Field>
 
@@ -224,7 +245,7 @@ export function ExpenseForm({
             type="datetime-local"
             required
             defaultValue={initial?.paidAt}
-            className={inputClass}
+            className={`${inputClass} ${lowConfidenceClass("paidAt")}`}
           />
         </Field>
       </div>
@@ -259,7 +280,7 @@ export function ExpenseForm({
             required
             value={amountOriginal}
             onChange={(event) => setAmountOriginal(event.target.value)}
-            className={inputClass}
+            className={`${inputClass} ${lowConfidenceClass("amountOriginal")}`}
           />
         </Field>
         <Field label="幣別" htmlFor="currency" errors={state.fieldErrors?.currency}>
@@ -271,7 +292,7 @@ export function ExpenseForm({
             required
             value={currency}
             onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-            className={`${inputClass} w-20 uppercase`}
+            className={`${inputClass} w-20 uppercase ${lowConfidenceClass("currency")}`}
           />
         </Field>
       </div>

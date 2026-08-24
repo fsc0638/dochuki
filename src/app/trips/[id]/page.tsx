@@ -62,12 +62,20 @@ export default async function TripOverviewPage({
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-neutral-600">支出</h2>
-          <Link
-            href={`/trips/${id}/expenses/new`}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white"
-          >
-            + 新增支出
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href={`/trips/${id}/receipts/new`}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700"
+            >
+              拍照記帳
+            </Link>
+            <Link
+              href={`/trips/${id}/expenses/new`}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white"
+            >
+              + 新增支出
+            </Link>
+          </div>
         </div>
         <ExpenseFilters
           tripId={id}
