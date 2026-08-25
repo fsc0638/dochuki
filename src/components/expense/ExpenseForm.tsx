@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState } from "react";
 import { Field, inputClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { SubmitButton } from "@/components/ui/SubmitButton";
@@ -46,6 +46,7 @@ export interface ExpenseFormInitial {
   participantIds?: string[];
   groupId?: string;
   exactShares?: Record<string, string>;
+  fundSpend?: boolean;
 }
 
 /**
@@ -64,6 +65,7 @@ export function ExpenseForm({
   initial,
   submitLabel,
   lowConfidenceFields,
+  fundCurrency,
 }: {
   action: (prevState: ActionState, formData: FormData) => Promise<ActionState>;
   tripId: string;
@@ -75,6 +77,8 @@ export function ExpenseForm({
   submitLabel: string;
   /** 收據解析 confidence < 0.8 的欄位；來自拍照解析時標紅提醒使用者複查 */
   lowConfidenceFields?: Set<LowConfidenceField>;
+  /** 這個行程的公費幣別；沒有公費池時傳 undefined，不顯示「由公費支付」選項 */
+  fundCurrency?: string;
 }) {
   const [state, formAction] = useActionState(action, INITIAL_ACTION_STATE);
 
@@ -86,6 +90,10 @@ export function ExpenseForm({
 
   const [amountOriginal, setAmountOriginal] = useState(initial?.amountOriginal ?? "");
   const [currency, setCurrency] = useState(initial?.currency ?? homeCurrency);
+  const [fundSpend, setFundSpend] = useState(initial?.fundSpend ?? false);
+  // 勾選「由公費支付」當下記住原本的幣別，取消勾選時要換回去，不能留在
+  // 公費幣別上——那是鎖定顯示用的值，不是使用者實際選的
+  const preFundCurrencyRef = useRef(currency);
   const [manualRate, setManualRate] = useState(initial?.manualRate ?? "");
   const [payerId, setPayerId] = useState(initial?.payerId ?? members[0]?.id ?? "");
   const [splitMode, setSplitMode] = useState<SplitModeInput>(initial?.splitMode ?? "EQUAL");
@@ -290,12 +298,35 @@ export function ExpenseForm({
             type="text"
             maxLength={3}
             required
+            readOnly={fundSpend}
             value={currency}
             onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-            className={`${inputClass} w-20 uppercase ${lowConfidenceClass("currency")}`}
+            className={`${inputClass} w-20 uppercase ${fundSpend ? "bg-neutral-100" : ""} ${lowConfidenceClass("currency")}`}
           />
         </Field>
       </div>
+
+      {fundCurrency !== undefined && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="fundSpend"
+            value="true"
+            checked={fundSpend}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setFundSpend(checked);
+              if (checked) {
+                preFundCurrencyRef.current = currency;
+                setCurrency(fundCurrency);
+              } else {
+                setCurrency(preFundCurrencyRef.current);
+              }
+            }}
+          />
+          由公費支付（幣別鎖定為公費幣別 {fundCurrency}）
+        </label>
+      )}
 
       {needsRateInput && (
         <Field

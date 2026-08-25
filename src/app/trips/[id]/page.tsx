@@ -45,6 +45,8 @@ export default async function TripOverviewPage({
           <h1 className="text-2xl font-bold">{trip.name}</h1>
           <div className="flex gap-3 text-sm text-neutral-500">
             <Link href={`/trips/${id}/members`}>成員</Link>
+            <Link href={`/trips/${id}/funds`}>公費</Link>
+            <Link href={`/trips/${id}/reports`}>報表</Link>
             <Link href={`/trips/${id}/settings`}>設定</Link>
           </div>
         </div>

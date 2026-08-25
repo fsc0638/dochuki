@@ -39,6 +39,8 @@ import {
 
 async function purgeTrip(tripId: string): Promise<void> {
   await prisma.expenseShare.deleteMany({ where: { expense: { tripId } } });
+  await prisma.fundEntry.deleteMany({ where: { fund: { tripId } } });
+  await prisma.fund.deleteMany({ where: { tripId } });
   await prisma.expense.deleteMany({ where: { tripId } });
   await prisma.member.deleteMany({ where: { tripId } });
   await prisma.group.deleteMany({ where: { tripId } });
@@ -128,6 +130,7 @@ describe("trips/write · trips/load", () => {
         currency: "JPY",
         amountOriginal: "3000",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m1, m2, m3],
       });
@@ -153,6 +156,7 @@ describe("trips/write · trips/load", () => {
         currency: "JPY",
         amountOriginal: "3000",
         payerId: m1,
+        fundSpend: false,
         splitMode: "WEIGHT",
         participantIds: [m1, m2], // 丙不再參與
       });
@@ -185,6 +189,7 @@ describe("trips/write · trips/load", () => {
         amountOriginal: "10",
         manualRate: "31.5",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m1, m2],
       });
@@ -213,6 +218,7 @@ describe("trips/write · trips/load", () => {
         currency: "XW1",
         amountOriginal: "100",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m1, m2],
       });
@@ -243,6 +249,7 @@ describe("trips/write · trips/load", () => {
           currency: "XW2",
           amountOriginal: "100",
           payerId: m1,
+          fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2],
         }),
@@ -265,6 +272,7 @@ describe("trips/write · trips/load", () => {
         currency: "TWD",
         amountOriginal: "1000",
         payerId: outsider,
+        fundSpend: false,
         splitMode: "BY_GROUP",
         groupId,
       });
@@ -292,6 +300,7 @@ describe("trips/write · trips/load", () => {
         currency: "TWD",
         amountOriginal: "1000",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EXACT",
         exactShares: [
           { memberId: m1, amount: "600" },
@@ -315,6 +324,7 @@ describe("trips/write · trips/load", () => {
           currency: "TWD",
           amountOriginal: "1000",
           payerId: m1,
+          fundSpend: false,
           splitMode: "EXACT",
           exactShares: [
             { memberId: m1, amount: "600" },
@@ -336,6 +346,7 @@ describe("trips/write · trips/load", () => {
           currency: "TWD",
           amountOriginal: "100",
           payerId: m3,
+          fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2], // 丙代墊但不在分攤名單
         }),
@@ -358,6 +369,7 @@ describe("trips/write · trips/load", () => {
           currency: "TWD",
           amountOriginal: "150",
           payerId: m1,
+          fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2],
         },
@@ -425,6 +437,7 @@ describe("trips/write · trips/load", () => {
           currency: "TWD",
           amountOriginal: "100",
           payerId: m1,
+          fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2],
         },
@@ -449,6 +462,7 @@ describe("trips/write · trips/load", () => {
         currency: "TWD",
         amountOriginal: "100",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m1, m2],
       });
@@ -470,6 +484,7 @@ describe("trips/write · trips/load", () => {
           currency: "TWD",
           amountOriginal: "1000",
           payerId: m1,
+          fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2],
         },
@@ -510,6 +525,7 @@ describe("trips/write · trips/load", () => {
         currency: "TWD",
         amountOriginal: "100",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL" as const,
         participantIds: [m1, m2],
       };
@@ -541,6 +557,7 @@ describe("trips/write · trips/load", () => {
             currency: "TWD",
             amountOriginal: "100",
             payerId: m1,
+            fundSpend: false,
             splitMode: "EQUAL",
             participantIds: [m1, m2],
           },
@@ -563,6 +580,7 @@ describe("trips/write · trips/load", () => {
         currency: "TWD",
         amountOriginal: "100",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m1, m2],
       });
@@ -594,6 +612,7 @@ describe("trips/write · trips/load", () => {
         currency: "TWD",
         amountOriginal: "300",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m1, m2],
       });
@@ -605,6 +624,7 @@ describe("trips/write · trips/load", () => {
         currency: "TWD",
         amountOriginal: "100",
         payerId: m2,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m2],
       });
@@ -639,6 +659,7 @@ describe("trips/write · trips/load", () => {
         currency: "JPY",
         amountOriginal: "1000",
         payerId: m1,
+        fundSpend: false,
         splitMode: "EQUAL",
         participantIds: [m1, m2],
       });
@@ -665,6 +686,179 @@ describe("trips/write · trips/load", () => {
         fixedRates: [{ currency: "JPY", rate: "0.25" }],
       });
       await deleteExpense(expense.id);
+    });
+  });
+
+  describe("createExpense/updateExpense/deleteExpense · fundSpend（P4 公費支付）", () => {
+    let fundId: string;
+
+    beforeAll(async () => {
+      const fund = await prisma.fund.create({
+        data: { tripId, name: "公費", currency: "JPY" },
+      });
+      fundId = fund.id;
+    });
+
+    afterAll(async () => {
+      await prisma.fundEntry.deleteMany({ where: { fundId } });
+      await prisma.fund.delete({ where: { id: fundId } });
+    });
+
+    it("fundSpend=true 但幣別跟公費不一致：拒絕，不建立支出", async () => {
+      await expect(
+        createExpense({
+          tripId,
+          description: "幣別不符",
+          category: "餐飲",
+          paidAt: "2026-09-01T12:00:00+09:00",
+          currency: "TWD",
+          amountOriginal: "500",
+          payerId: m1,
+          fundSpend: true,
+          splitMode: "EQUAL",
+          participantIds: [m1],
+        }),
+      ).rejects.toThrow("公費幣別");
+    });
+
+    it("fundSpend=true 且幣別相符：建立支出的同時自動記一筆 SPEND FundEntry", async () => {
+      const expense = await createExpense({
+        tripId,
+        description: "團體晚餐（公費）",
+        category: "餐飲",
+        paidAt: "2026-09-01T18:00:00+09:00",
+        currency: "JPY",
+        amountOriginal: "6000",
+        payerId: m1,
+        fundSpend: true,
+        splitMode: "EQUAL",
+        participantIds: [m1, m2],
+      });
+
+      const dbExpense = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
+      expect(dbExpense.fundSpend).toBe(true);
+
+      const entries = await prisma.fundEntry.findMany({ where: { linkedExpenseId: expense.id } });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.type).toBe("SPEND");
+      expect(entries[0]?.memberId).toBeNull();
+      expect(fromDb(entries[0]?.amount ?? 0).toString()).toBe("6000");
+
+      await deleteExpense(expense.id);
+    });
+
+    it("update 把 fundSpend 從 true 改成 false：舊的 SPEND FundEntry 被清掉", async () => {
+      const expense = await createExpense({
+        tripId,
+        description: "先公費後改自付",
+        category: "餐飲",
+        paidAt: "2026-09-01T18:00:00+09:00",
+        currency: "JPY",
+        amountOriginal: "2000",
+        payerId: m1,
+        fundSpend: true,
+        splitMode: "EQUAL",
+        participantIds: [m1],
+      });
+      expect(await prisma.fundEntry.count({ where: { linkedExpenseId: expense.id } })).toBe(1);
+
+      await updateExpense(expense.id, {
+        tripId,
+        description: "先公費後改自付",
+        category: "餐飲",
+        paidAt: "2026-09-01T18:00:00+09:00",
+        currency: "JPY",
+        amountOriginal: "2000",
+        payerId: m1,
+        fundSpend: false,
+        splitMode: "EQUAL",
+        participantIds: [m1],
+      });
+
+      expect(await prisma.fundEntry.count({ where: { linkedExpenseId: expense.id } })).toBe(0);
+      await deleteExpense(expense.id);
+    });
+
+    it("update 改動金額：對應的 SPEND FundEntry 金額跟著同步，不留舊金額的殘影", async () => {
+      const expense = await createExpense({
+        tripId,
+        description: "金額會改",
+        category: "餐飲",
+        paidAt: "2026-09-01T18:00:00+09:00",
+        currency: "JPY",
+        amountOriginal: "1000",
+        payerId: m1,
+        fundSpend: true,
+        splitMode: "EQUAL",
+        participantIds: [m1],
+      });
+
+      await updateExpense(expense.id, {
+        tripId,
+        description: "金額會改",
+        category: "餐飲",
+        paidAt: "2026-09-01T18:00:00+09:00",
+        currency: "JPY",
+        amountOriginal: "1500",
+        payerId: m1,
+        fundSpend: true,
+        splitMode: "EQUAL",
+        participantIds: [m1],
+      });
+
+      const entries = await prisma.fundEntry.findMany({ where: { linkedExpenseId: expense.id } });
+      expect(entries).toHaveLength(1);
+      expect(fromDb(entries[0]?.amount ?? 0).toString()).toBe("1500");
+
+      await deleteExpense(expense.id);
+    });
+
+    it("deleteExpense：連帶清掉關聯的 SPEND FundEntry，不留下指向不存在支出的殘影", async () => {
+      const expense = await createExpense({
+        tripId,
+        description: "刪除測試",
+        category: "餐飲",
+        paidAt: "2026-09-01T18:00:00+09:00",
+        currency: "JPY",
+        amountOriginal: "800",
+        payerId: m1,
+        fundSpend: true,
+        splitMode: "EQUAL",
+        participantIds: [m1],
+      });
+      expect(await prisma.fundEntry.count({ where: { linkedExpenseId: expense.id } })).toBe(1);
+
+      await deleteExpense(expense.id);
+
+      expect(await prisma.fundEntry.count({ where: { linkedExpenseId: expense.id } })).toBe(0);
+    });
+
+    it("fundSpend=true 但行程沒有公費池：拒絕，訊息清楚說明原因", async () => {
+      const otherTrip = await createTrip({
+        name: "沒有公費的行程",
+        startDate: "2026-10-01",
+        endDate: "2026-10-02",
+        homeCurrency: "TWD",
+        fixedRates: [],
+      });
+      const otherMember = await createMember({ tripId: otherTrip.id, name: "獨行", groupId: null });
+
+      await expect(
+        createExpense({
+          tripId: otherTrip.id,
+          description: "沒有公費池",
+          category: "餐飲",
+          paidAt: "2026-10-01T12:00:00+09:00",
+          currency: "TWD",
+          amountOriginal: "500",
+          payerId: otherMember.id,
+          fundSpend: true,
+          splitMode: "EQUAL",
+          participantIds: [otherMember.id],
+        }),
+      ).rejects.toThrow("還沒有公費池");
+
+      await purgeTrip(otherTrip.id);
     });
   });
 });

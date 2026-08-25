@@ -122,6 +122,7 @@ export default async function NewExpensePage({
         submitLabel="新增支出"
         initial={initial}
         lowConfidenceFields={flaggedFields}
+        fundCurrency={trip.funds[0]?.currency}
       />
     </main>
   );

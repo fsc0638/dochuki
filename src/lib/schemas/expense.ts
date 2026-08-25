@@ -39,6 +39,8 @@ const BaseExpenseFieldsSchema = z.object({
   amountOriginal: zPositiveMoneyString,
   payerId: zCuid,
   manualRate: zPositiveMoneyString.optional(),
+  /** 由公費支付：true 時幣別須等於行程公費幣別，寫入層會自動記一筆 SPEND FundEntry */
+  fundSpend: z.boolean().default(false),
 });
 
 /**
@@ -70,6 +72,8 @@ export function parseExpenseFormData(
       typeof manualRate === "string" && manualRate.trim() !== ""
         ? manualRate
         : undefined,
+    // checkbox 未勾選時 FormData 裡完全不會有這個 key，不是 "false"
+    fundSpend: formData.get("fundSpend") === "true",
   };
 
   const splitMode = formData.get("splitMode");

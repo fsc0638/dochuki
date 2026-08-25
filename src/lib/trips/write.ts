@@ -172,6 +172,9 @@ interface ResolvedExpense {
   rateUsed: string;
   amountHome: string;
   shares: Array<{ memberId: string; shareHome: string }>;
+  fundSpend: boolean;
+  /** fundSpend 為 true 時才有值；解析時已確認金額幣別與此公費一致 */
+  fundId: string | null;
 }
 
 /**
@@ -183,9 +186,24 @@ async function resolveExpense(
 ): Promise<ResolvedExpense> {
   const trip = await prisma.trip.findUniqueOrThrow({
     where: { id: input.tripId },
-    include: { members: true },
+    include: { members: true, funds: true },
   });
   const tripFixedRates = parseFixedRates(trip.fixedRates);
+
+  // 公費支付：幣別鎖定必須等於公費本身的幣別（P4 裁示，見 CLAUDE.md 進度
+  // 日誌）——公費是一筆單一幣別的池子，跨幣別支用需要額外匯率換算，
+  // 目前沒有這個需求就不先做，之後真有需要再加。
+  const fund = trip.funds[0] ?? null;
+  if (input.fundSpend) {
+    if (fund === null) {
+      throw new Error("這個行程還沒有公費池，無法標記「由公費支付」");
+    }
+    if (input.currency.toUpperCase() !== fund.currency.toUpperCase()) {
+      throw new Error(
+        `由公費支付的支出，幣別必須是公費幣別 ${fund.currency}（目前選的是 ${input.currency}）`,
+      );
+    }
+  }
 
   let dailyRefRate: string | undefined;
   const needsExternalRate =
@@ -252,6 +270,8 @@ async function resolveExpense(
       memberId: share.memberId,
       shareHome: toDbAmount(share.shareHome),
     })),
+    fundSpend: input.fundSpend,
+    fundId: input.fundSpend ? (fund?.id ?? null) : null,
   };
 }
 
@@ -368,6 +388,7 @@ export async function createExpense(
         rateUsed: resolved.rateUsed,
         amountHome: resolved.amountHome,
         splitMode: input.splitMode,
+        fundSpend: resolved.fundSpend,
       },
     });
     await tx.expenseShare.createMany({
@@ -377,6 +398,20 @@ export async function createExpense(
         shareHome: share.shareHome,
       })),
     });
+
+    if (resolved.fundSpend && resolved.fundId !== null) {
+      await tx.fundEntry.create({
+        data: {
+          fundId: resolved.fundId,
+          type: "SPEND",
+          amount: resolved.amountOriginal,
+          linkedExpenseId: expense.id,
+          // 明確帶 paidAt，不要吃 schema 的 @default(now())——公費帳本要照
+          // 支出實際發生的日期排序，不是「這筆支出是什麼時候被記進系統」。
+          occurredAt: new Date(input.paidAt),
+        },
+      });
+    }
 
     if (receiptContext !== undefined) {
       if (receiptContext.lineItems.length > 0) {
@@ -424,6 +459,7 @@ export async function updateExpense(
         rateUsed: resolved.rateUsed,
         amountHome: resolved.amountHome,
         splitMode: input.splitMode,
+        fundSpend: resolved.fundSpend,
       },
     });
     await tx.expenseShare.deleteMany({ where: { expenseId } });
@@ -434,10 +470,97 @@ export async function updateExpense(
         shareHome: share.shareHome,
       })),
     });
+
+    // linkedExpenseId 是純欄位、沒有 DB 層外鍵（見 schema.prisma FundEntry），
+    // 不會隨 Expense 異動自動同步——每次更新都先砍舊的、金額或幣別若變了
+    // 也不會留下對不上的殘影，還在公費支付就重建一筆對齊最新金額。
+    await tx.fundEntry.deleteMany({ where: { linkedExpenseId: expenseId } });
+    if (resolved.fundSpend && resolved.fundId !== null) {
+      await tx.fundEntry.create({
+        data: {
+          fundId: resolved.fundId,
+          type: "SPEND",
+          amount: resolved.amountOriginal,
+          linkedExpenseId: expenseId,
+          occurredAt: new Date(input.paidAt),
+        },
+      });
+    }
   });
 }
 
-/** 刪除支出。ExpenseShare／LineItem／Receipt 皆為 ON DELETE CASCADE，一併清除 */
+/**
+ * 刪除支出。ExpenseShare／LineItem／Receipt 皆為 ON DELETE CASCADE，一併清除；
+ * FundEntry.linkedExpenseId 沒有 DB 層外鍵（見 schema.prisma），得手動清，
+ * 否則會留下指向不存在支出的公費支用記錄。
+ */
 export async function deleteExpense(expenseId: string): Promise<void> {
-  await prisma.expense.delete({ where: { id: expenseId } });
+  await prisma.$transaction([
+    prisma.fundEntry.deleteMany({ where: { linkedExpenseId: expenseId } }),
+    prisma.expense.delete({ where: { id: expenseId } }),
+  ]);
+}
+
+// --------------------------------------------------------------- Fund -----
+
+/** 每個行程最多一個公費池——目前 UI／schema 都只設計成單池，先建先贏 */
+export async function createFund(input: {
+  tripId: string;
+  name: string;
+  currency: string;
+}): Promise<{ id: string }> {
+  const [existing, trip] = await Promise.all([
+    prisma.fund.findFirst({ where: { tripId: input.tripId } }),
+    prisma.trip.findUniqueOrThrow({ where: { id: input.tripId } }),
+  ]);
+  if (existing !== null) {
+    throw new Error("這個行程已經有公費池了");
+  }
+  const currency = input.currency.toUpperCase();
+  const tripFixedRates = parseFixedRates(trip.fixedRates);
+  const isHomeCurrency = currency === trip.homeCurrency.toUpperCase();
+  // 公費彙總（report.ts）沒有「單筆手動輸入匯率」這回事——公費是整池共用同一
+  // 個幣別，只能靠行程固定匯率換算，所以建立當下就得擋掉解析不出來的幣別，
+  // 不然要等到出報表才炸開。
+  if (!isHomeCurrency && tripFixedRates[currency] === undefined) {
+    throw new Error(
+      `公費幣別 ${currency} 沒有對應的行程固定匯率，請先到行程設定新增 ${currency} → ${trip.homeCurrency} 的固定匯率，或改用記帳幣 ${trip.homeCurrency} 建立公費池`,
+    );
+  }
+  const fund = await prisma.fund.create({
+    data: { tripId: input.tripId, name: input.name, currency },
+  });
+  return { id: fund.id };
+}
+
+/** 提撥：只有這個方向能手動新增，支用一律由 createExpense/updateExpense 自動記 */
+export async function createFundContribution(input: {
+  fundId: string;
+  memberId: string;
+  amount: string;
+  note?: string;
+}): Promise<{ id: string }> {
+  const entry = await prisma.fundEntry.create({
+    data: {
+      fundId: input.fundId,
+      memberId: input.memberId,
+      type: "CONTRIBUTION",
+      amount: toDbAmount(input.amount),
+      note: input.note,
+    },
+  });
+  return { id: entry.id };
+}
+
+/**
+ * 刪除一筆手動提撥。只允許刪 CONTRIBUTION——SPEND 是支出的附屬記錄
+ * （linkedExpenseId 指回某筆 Expense），要改動請去改或刪那筆支出，
+ * 不能在這裡直接刪，否則公費餘額會跟支出記錄各說各話。
+ */
+export async function deleteFundContribution(entryId: string): Promise<void> {
+  const entry = await prisma.fundEntry.findUniqueOrThrow({ where: { id: entryId } });
+  if (entry.type !== "CONTRIBUTION") {
+    throw new Error("支用記錄跟著支出走，請到對應的支出頁面修改或刪除");
+  }
+  await prisma.fundEntry.delete({ where: { id: entryId } });
 }

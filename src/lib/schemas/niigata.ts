@@ -59,6 +59,11 @@ export interface NiigataInput {
     currency: string;
     contributionPerMember: MoneyString;
   };
+  /**
+   * 個人消費預估的來源數字。P4：不是 schema 欄位，seed.ts 用它替每位成員
+   * 各建一筆單人 Expense；regression 測試另外把它當 summarizeTrip() 的
+   * extras 使用，見 fixtures/niigata/input.json 的 personalBudget._comment。
+   */
   personalBudget: {
     currency: string;
     perMember: MoneyString;

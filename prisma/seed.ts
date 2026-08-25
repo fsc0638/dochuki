@@ -122,6 +122,53 @@ async function main(): Promise<void> {
     });
   }
 
+  // --- 個人消費：每人各一筆單人 Expense（splitMode EQUAL、參與者只有自己）---
+  // P4 裁示：不新增 schema 欄位（維持 P2「不做個人消費預估欄位」的決定），
+  // 個人消費就是一筆一人參與的普通支出，跟其他支出走同一套 resolveRate／
+  // splitExpense 路徑，見 fixtures/niigata/input.json 的 personalBudget._comment。
+  for (const member of input.members) {
+    const resolution = resolveRate({
+      currency: input.personalBudget.currency,
+      homeCurrency,
+      tripFixedRates: input.trip.fixedRates,
+    });
+    const amountHome = convertToHome({
+      amountOriginal: input.personalBudget.perMember,
+      rate: resolution.rate,
+    });
+
+    const expense = await prisma.expense.create({
+      data: {
+        tripId,
+        payerId: member.id,
+        paidAt: new Date(input.trip.startDate),
+        category: "雜項",
+        description: "個人消費（預估）",
+        currency: input.personalBudget.currency,
+        amountOriginal: toDbAmount(input.personalBudget.perMember),
+        rateSource: resolution.source,
+        rateUsed: toDbRate(resolution.rate),
+        amountHome: toDbAmount(amountHome),
+        splitMode: "EQUAL",
+      },
+    });
+
+    const result = splitExpense({
+      amountHome,
+      mode: "EQUAL",
+      participants: [{ memberId: member.id, groupId: member.groupId }],
+      payerId: member.id,
+      groupId: null,
+    });
+    await prisma.expenseShare.createMany({
+      data: result.shares.map((share) => ({
+        expenseId: expense.id,
+        memberId: share.memberId,
+        shareHome: toDbAmount(share.shareHome),
+      })),
+    });
+  }
+
   // --- 公費池：每人提撥一筆 CONTRIBUTION ---
   const fund = await prisma.fund.create({
     data: {
@@ -148,9 +195,9 @@ async function main(): Promise<void> {
     [
       `已匯入行程「${input.trip.name}」（${tripId}）`,
       `  組別 ${input.groups.length}／成員 ${input.members.length}`,
-      `  支出 ${input.expenses.length} 筆、分攤明細 ${shareCount} 列`,
+      `  支出 ${input.expenses.length + input.members.length} 筆（共同 ${input.expenses.length}＋個人消費 ${input.members.length}）、分攤明細 ${shareCount} 列`,
       `  公費提撥 ${input.members.length} 筆 × ${input.fund.contributionPerMember} ${input.fund.currency}`,
-      `  個人消費預估 ${input.personalBudget.perMember} ${input.personalBudget.currency}/人（schema 尚無對應欄位，未落地）`,
+      `  個人消費 ${input.members.length} 筆 × ${input.personalBudget.perMember} ${input.personalBudget.currency}/人（真實 Expense，非 schema 欄位）`,
     ].join("\n"),
   );
 }

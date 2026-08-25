@@ -122,7 +122,7 @@
     "contributionPerMember": "30000"
   },
   "personalBudget": {
-    "_comment": "個人消費預估。docs/IMPLEMENTATION.md §4 的 schema 目前沒有對應欄位，P4 報表「區塊三個人消費」需要它，屬待補的規格缺口。",
+    "_comment": "個人消費預估。P4 裁示：不新增 schema 欄位（維持 P2 決定），改由 seed.ts 替每位成員各建一筆真實的單人 Expense（splitMode EQUAL、參與者只有自己）落地，PDF 報表「區塊三個人消費」直接讀真實支出。這裡的值只作為 seed 的來源數字，tests/money.regression.test.ts 仍額外把它當 summarizeTrip() 的 extras.personalPerMemberHome 使用——兩條路徑各自獨立，只是恰好算出同一個歷史數字。",
     "currency": "TWD",
     "perMember": "35000"
   }

@@ -66,6 +66,7 @@ export default async function EditExpensePage({
         members={members}
         groups={trip.groups.map((group) => ({ id: group.id, name: group.name }))}
         submitLabel="儲存變更"
+        fundCurrency={trip.funds[0]?.currency}
         initial={{
           description: expense.description,
           category: expense.category,
@@ -92,6 +93,7 @@ export default async function EditExpensePage({
                   ]),
                 )
               : undefined,
+          fundSpend: expense.fundSpend,
         }}
       />
     </main>

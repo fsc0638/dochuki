@@ -2,6 +2,7 @@ import type Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
 import { Money } from "@/lib/money/decimal";
 import { fromDb } from "@/lib/money/fromDb";
+import { summarizeFund } from "@/lib/money/fund";
 
 /**
  * 行程讀取層。
@@ -22,6 +23,7 @@ export async function loadTrip(tripId: string) {
         include: { group: true },
         orderBy: { name: "asc" },
       },
+      funds: true,
     },
   });
 }
@@ -126,4 +128,76 @@ export async function loadMemberTotals(tripId: string): Promise<MemberTotal[]> {
     groupName: member.group?.name ?? null,
     expenseShareTotal: totals.get(member.id) ?? new Money(0),
   }));
+}
+
+export interface FundEntryView {
+  id: string;
+  type: "CONTRIBUTION" | "SPEND";
+  memberId: string | null;
+  memberName: string | null;
+  amount: Decimal;
+  linkedExpenseId: string | null;
+  linkedExpenseDescription: string | null;
+  note: string | null;
+  occurredAt: Date;
+}
+
+export interface FundView {
+  id: string;
+  name: string;
+  currency: string;
+  entries: FundEntryView[];
+  contributionTotal: Decimal;
+  spendTotal: Decimal;
+  balance: Decimal;
+}
+
+export async function loadFund(tripId: string): Promise<FundView | null> {
+  const fund = await prisma.fund.findFirst({
+    where: { tripId },
+    include: {
+      entries: {
+        include: { member: true },
+        orderBy: { occurredAt: "desc" },
+      },
+    },
+  });
+  if (fund === null) return null;
+
+  const linkedExpenseIds = fund.entries
+    .map((e) => e.linkedExpenseId)
+    .filter((id): id is string => id !== null);
+  const linkedExpenses =
+    linkedExpenseIds.length === 0
+      ? []
+      : await prisma.expense.findMany({
+          where: { id: { in: linkedExpenseIds } },
+          select: { id: true, description: true },
+        });
+  const descriptionByExpenseId = new Map(linkedExpenses.map((e) => [e.id, e.description]));
+
+  const entries: FundEntryView[] = fund.entries.map((entry) => ({
+    id: entry.id,
+    type: entry.type,
+    memberId: entry.memberId,
+    memberName: entry.member?.name ?? null,
+    amount: fromDb(entry.amount),
+    linkedExpenseId: entry.linkedExpenseId,
+    linkedExpenseDescription:
+      entry.linkedExpenseId === null ? null : (descriptionByExpenseId.get(entry.linkedExpenseId) ?? null),
+    note: entry.note,
+    occurredAt: entry.occurredAt,
+  }));
+
+  const balance = summarizeFund(entries.map((e) => ({ type: e.type, amount: e.amount })));
+
+  return {
+    id: fund.id,
+    name: fund.name,
+    currency: fund.currency,
+    entries,
+    contributionTotal: balance.contributionTotal,
+    spendTotal: balance.spendTotal,
+    balance: balance.balance,
+  };
 }
