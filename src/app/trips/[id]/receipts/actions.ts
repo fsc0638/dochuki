@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { type ActionState, toErrorMessage } from "@/lib/actionState";
 import { prisma } from "@/lib/db";
-import { parseReceipt } from "@/lib/parse/anthropic";
+import { parseReceipt } from "@/lib/parse/gemini";
 import { mediaTypeForPath, persistParseResult, receiptStorageDir } from "@/lib/receipts/write";
 
 /**
@@ -14,7 +14,7 @@ import { mediaTypeForPath, persistParseResult, receiptStorageDir } from "@/lib/r
  * （見 ReparseButton.tsx）。
  *
  * 跟其他 Server Action 一樣走 ActionState 慣例（見 lib/actionState.ts）：
- * 收據檔案讀不到、Anthropic 呼叫失敗等狀況都回傳友善訊息，不讓例外原始
+ * 收據檔案讀不到、Gemini 呼叫失敗等狀況都回傳友善訊息，不讓例外原始
  * 冒到畫面上。
  */
 export async function reparseReceiptAction(

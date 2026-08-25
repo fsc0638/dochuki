@@ -36,11 +36,11 @@ fixtures/receipts/
 ## 跑評估
 
 ```bash
-RUN_PARSE_EVAL=1 pnpm test parse-eval
+RUN_PARSE_EVAL=1 pnpm test parse.eval
 ```
 
-**必須加 `RUN_PARSE_EVAL=1`**——這個檔案每個樣本都會真的呼叫 Anthropic
-API、花真的錢，故意不讓它被一般的 `pnpm test` 或不小心打的 `pnpm test parse-eval`
+**必須加 `RUN_PARSE_EVAL=1`**——這個檔案每個樣本都會真的呼叫 Gemini
+API、花真的錢，故意不讓它被一般的 `pnpm test` 或不小心打的 `pnpm test parse.eval`
 默默執行掉。
 
 ## 目前狀態

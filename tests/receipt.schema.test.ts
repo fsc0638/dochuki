@@ -1,4 +1,4 @@
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import {
   LOW_CONFIDENCE_THRESHOLD,
@@ -9,10 +9,11 @@ import {
  * ReceiptParseSchema 測試。
  *
  * 重點不是「zod 驗證邏輯本身對不對」（那是 zod 自己的職責），是這份 schema
- * 是否真的能餵給 Anthropic 的 Structured Outputs——confidence 從
- * §5.2 原文的 `z.record(...)` 改成固定欄位就是為了滿足這個限制，這裡要有
- * 測試釘住，不然日後有人「順手」把它改回 record，會在跑到真的 API 呼叫時
- * 才爆炸（而且錯誤訊息通常不會直接告訴你是 additionalProperties 的問題）。
+ * 是否真的能轉成 Gemini `responseJsonSchema` 吃的標準 JSON Schema
+ * （`z.toJSONSchema()`，見 src/lib/parse/gemini.ts）——confidence 從
+ * §5.2 原文的 `z.record(...)` 改成固定欄位就是為了讓這份 schema 保持封閉、
+ * 可靠地轉換，這裡要有測試釘住，不然日後有人「順手」把它改回 record，會在
+ * 跑到真的 API 呼叫時才爆炸。
  */
 
 const VALID_SAMPLE = {
@@ -46,9 +47,18 @@ const VALID_SAMPLE = {
   },
 };
 
-describe("ReceiptParseSchema · Structured Outputs 相容性", () => {
-  it("★ zodOutputFormat 編譯不拋出——confidence 固定欄位、非 record", () => {
-    expect(() => zodOutputFormat(ReceiptParseSchema)).not.toThrow();
+describe("ReceiptParseSchema · 結構化輸出相容性", () => {
+  it("★ z.toJSONSchema 轉換不拋出", () => {
+    expect(() => z.toJSONSchema(ReceiptParseSchema)).not.toThrow();
+  });
+
+  it("★ confidence 是封閉物件（additionalProperties: false）——不拋出這件事本身不夠：" +
+    "z.toJSONSchema 對 z.record(...) 也不會拋出，只是不會產生這個約束，" +
+    "所以要直接斷言這個值才能真的釘住「confidence 不得改回 record」", () => {
+    const jsonSchema = z.toJSONSchema(ReceiptParseSchema) as unknown as {
+      properties: { confidence: { additionalProperties: unknown } };
+    };
+    expect(jsonSchema.properties.confidence.additionalProperties).toBe(false);
   });
 });
 

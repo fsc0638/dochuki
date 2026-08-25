@@ -2,7 +2,7 @@ import "dotenv/config";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseReceipt } from "@/lib/parse/anthropic";
+import { parseReceipt } from "@/lib/parse/gemini";
 import {
   ReceiptGroundTruthSchema,
   type ReceiptGroundTruth,
@@ -17,7 +17,7 @@ import {
  * API→比對→算錯誤率），算不出有意義的數字——那需要使用者實際拍 30 張
  * 收據放進 fixtures/receipts/。
  *
- * ★★ 每筆樣本都是一次真的 Anthropic API 呼叫、花真的錢。故意要求
+ * ★★ 每筆樣本都是一次真的 Gemini API 呼叫、花真的錢。故意要求
  * RUN_PARSE_EVAL=1 才會真的跑，避免這個成本在有人不小心打
  * `pnpm test`／`pnpm test parse-eval` 時被默默觸發。
  */

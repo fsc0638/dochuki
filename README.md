@@ -26,7 +26,7 @@ pnpm install
 cp .env.example .env
 ```
 
-`.env` 的 `DATABASE_URL` 預設值已對應 `docker-compose.yml`，本機開發不需修改。`ANTHROPIC_API_KEY` 到 P3 拍照解析才會用到。
+`.env` 的 `DATABASE_URL` 預設值已對應 `docker-compose.yml`，本機開發不需修改。`GEMINI_API_KEY` 到 P3 拍照解析才會用到。
 
 > **連接埠note**：容器對外映射 **5442**（非 IMPLEMENTATION.md §10 記載的 5432）。開發機的 5432 已被既有的 PostgreSQL 18 Windows 服務（`postgresql-x64-18`）占用，兩者互不影響。
 

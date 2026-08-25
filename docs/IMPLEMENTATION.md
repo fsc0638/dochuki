@@ -27,7 +27,7 @@
    ┌───────────┼──────────────┬───────────────┐
    ▼           ▼              ▼               ▼
  Prisma     解析服務        匯率服務        報表引擎
- PostgreSQL  Anthropic API   Frankfurter    exceljs / CSV
+ PostgreSQL  Gemini API      Frankfurter    exceljs / CSV
  (docker)    vision→JSON     + fx_rates快取  Playwright→PDF
    │
    ▼
@@ -312,11 +312,27 @@ Rules:
 >    一次」是應用層再包一層，處理的是 SDK 重試耗盡、schema 驗證不過（`parsed_output: null`）、或安全
 >    分類器拒答（`stop_reason: "refusal"`）這三種情況，兩次都失敗才回 `null` 降級。
 
+> **2026-08-25 改用 Gemini**（使用者裁示，見 CLAUDE.md 進度日誌；上面兩點 P3 記載的 Anthropic 呼叫方式
+> 已不是目前程式碼路徑，保留原文供對照，不刪除）
+> 1. **模型**：`gemini-3.1-pro-preview`——Gemini 3 系列目前唯一的 Pro 檔位（前代
+>    `gemini-3-pro-preview` 已於 2026-03-09 停用）。`GEMINI_API_KEY` 走環境變數。
+> 2. **呼叫方式**：`client.models.generateContent()` + `config.responseJsonSchema`（吃標準 JSON
+>    Schema，用 Zod v4 內建 `z.toJSONSchema(ReceiptParseSchema)` 直接轉換，不必手刻第二份 schema）。
+>    跟 Anthropic 的 `messages.parse()` 不同，這條路徑不會自動把回應驗證成型別安全物件——`response.text`
+>    是純文字，呼叫端（`src/lib/parse/gemini.ts`）自己 `JSON.parse()` 後再過一次
+>    `ReceiptParseSchema.safeParse()`，驗證失敗視同這次嘗試失敗。
+> 3. **拒答判斷**：無 Anthropic 的 `stop_reason: "refusal"` 對應概念，改判斷
+>    `response.promptFeedback?.blockReason`（提示詞整個被擋）與
+>    `response.candidates[0]?.finishReason !== "STOP"`（生成中途被擋或異常結束），任一為真即視為失敗。
+> 4. **選型依據**：換供應商前用一次多角度研究比較 Anthropic／OpenAI／Gemini／專用收據 OCR API 四個選項，
+>    結論是四者皆缺「日文收據」專項驗證數據，這個缺口跟選哪家 API 無關，只能靠使用者實測 5–10 張真實
+>    收據補上——換供應商本身不是為了解決已知的辨識準確度問題，是使用者的產品選擇。
+
 ### 5.4 準確率評估
 
 `fixtures/receipts/` 每張圖配一份人工標註 JSON。`RUN_PARSE_EVAL=1 pnpm test parse.eval` 計算關鍵欄位（total/datetime/currency/tax_rate）錯誤率與品項召回率；P3 驗收線：30 張實體收據關鍵欄位人工修正率 < 20%。
 
-> **2026-08-24 P3 落地時修正**：測試檔實際檔名為 `tests/parse.eval.ts`（點號分隔，對應本文件 §3 目錄樹），指令原文寫的 `pnpm test parse-eval`（連字號）子字串比對不到這個檔名，vitest 會回報「找不到測試檔」。另外評估腳本每筆樣本都是真實的 Anthropic API 呼叫、會真的花錢，故意加上 `RUN_PARSE_EVAL=1` 才會真的執行，避免被不小心觸發的 `pnpm test` 掃到。
+> **2026-08-24 P3 落地時修正**：測試檔實際檔名為 `tests/parse.eval.ts`（點號分隔，對應本文件 §3 目錄樹），指令原文寫的 `pnpm test parse-eval`（連字號）子字串比對不到這個檔名，vitest 會回報「找不到測試檔」。另外評估腳本每筆樣本都是真實的 Gemini API 呼叫、會真的花錢，故意加上 `RUN_PARSE_EVAL=1` 才會真的執行，避免被不小心觸發的 `pnpm test` 掃到。
 
 ## 6. 匯率模組
 

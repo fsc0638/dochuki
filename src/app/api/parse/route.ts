@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { parseReceipt } from "@/lib/parse/anthropic";
+import { parseReceipt } from "@/lib/parse/gemini";
 import { persistParseResult, receiptStorageDir } from "@/lib/receipts/write";
 
 /**
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   await mkdir(dir, { recursive: true });
   const filename = `${randomUUID()}.${extensionFor(mediaType)}`;
 
-  // 存檔、建 Receipt 記錄、呼叫 Anthropic 三者互不依賴彼此的結果，平行跑——
+  // 存檔、建 Receipt 記錄、呼叫 Gemini 三者互不依賴彼此的結果，平行跑——
   // 解析是多秒等級的呼叫，跟另外兩個毫秒等級的 I/O 序列疊加沒有意義
   const [, receipt, parsed] = await Promise.all([
     writeFile(path.join(dir, filename), buffer),

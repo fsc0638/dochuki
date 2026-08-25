@@ -5,17 +5,17 @@ import { EXPENSE_CATEGORIES } from "@/lib/constants";
  * 收據解析輸出 schema。依 docs/IMPLEMENTATION.md §5.2，但 `confidence`
  * 欄位從開放式的 `z.record(...)` 改成固定欄位的 object。
  *
- * 原因：這個 schema 要餵給 Anthropic API 的 Structured Outputs
- * （`output_config.format` via `zodOutputFormat`），該功能要求每個 object
- * 都要能編譯成 `additionalProperties: false` 的 JSON Schema——開放 key 的
- * record 天生不相容。改成固定欄位剛好對齊 §5.3 提示詞第 9 條本來就寫死的
- * 六個 key（store/datetime/currency/total/items/tax），schema 反而更精確。
+ * 原因：這個 schema 要餵給 AI vision API 的結構化輸出功能（原為 Anthropic
+ * Structured Outputs，2026-08-25 起改用 Gemini 的 `responseJsonSchema`，見
+ * `src/lib/parse/gemini.ts`），兩者都偏好每個 object 是封閉結構——開放 key
+ * 的 record 天生不相容或不可靠。改成固定欄位剛好對齊 §5.3 提示詞第 9 條本來
+ * 就寫死的六個 key（store/datetime/currency/total/items/tax），schema 反而
+ * 更精確，這個決定與供應商無關，換供應商不需要跟著改。
  *
- * 另外 Structured Outputs 不支援數值/字串的邊界約束（min/max/length），
- * SDK 會把這些從送給 API 的 schema 中拿掉、但仍在收到回應後於本機（此檔）
- * 驗證一次——所以 `.min(0).max(1)`、`.positive()` 等約束保留，只是不保證
- * 生成當下就守住，退化成「生成後驗證失敗 → 觸發重試」的角色，跟系統設計
- * 的「失敗重試一次後降級手動」完全吻合，不衝突。
+ * 另外結構化輸出功能通常不強制數值/字串的邊界約束（min/max/length）在生成
+ * 當下守住，回應仍會在本機（此檔）驗證一次——所以 `.min(0).max(1)`、
+ * `.positive()` 等約束保留，退化成「生成後驗證失敗 → 觸發重試」的角色，跟
+ * 系統設計的「失敗重試一次後降級手動」完全吻合，不衝突。
  */
 
 const ConfidenceScore = z.number().min(0).max(1);
