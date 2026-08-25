@@ -148,7 +148,21 @@ sudo certbot renew --dry-run   # 確認 90 天自動 renew 沒問題
 
 ## 進度追蹤
 
-- [ ] Phase A：Oracle VM 建立，拿到 Public IP
-- [ ] Phase B：Docker／Node／pnpm 裝好
-- [ ] Phase C：專案 clone＋`.env`＋DB migrate/seed，`pnpm test regression` 綠燈
-- [ ] Phase D：SSH tunnel／VS Code Remote-SSH 連線驗證可用
+- [x] Phase A：Oracle VM 建立，拿到 Public IP（`141.147.176.204`，`fsc0638-dev`）
+- [x] Phase B：Docker／Node／pnpm 裝好
+- [x] Phase C：專案 clone＋`.env`＋DB migrate/seed，`pnpm test regression` 綠燈（17/17）
+- [x] Phase D：SSH tunnel 連線驗證可用——2026-08-25 瀏覽器實測 `localhost:3001/trips`
+      正確顯示新潟團 seed 資料，Gemini 金鑰、DB、tunnel 全線打通
+
+**慣用連線方式**（兩個視窗）：
+```powershell
+# 窗口 A：工作視窗，跑 pnpm dev（用 tmux 包住，斷線不會中斷）
+ssh -i "$env:USERPROFILE\.ssh\oracle_devbot" ubuntu@141.147.176.204
+# 連上後：tmux new -s dev（或 tmux attach -t dev 接回既有 session）→ cd ~/dochuki → pnpm dev
+
+# 窗口 B：只負責 port forwarding，開著不要關、不要在裡面打指令
+ssh -i "$env:USERPROFILE\.ssh\oracle_devbot" -L 3001:localhost:3000 ubuntu@141.147.176.204
+```
+本機瀏覽器開 `http://localhost:3001`。本機 3000 port 因 Windows 保留而綁不了，固定改用 3001。
+
+VS Code Remote-SSH 尚未實測，之後真的要在雲端改程式碼時再驗證。
