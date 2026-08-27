@@ -25,35 +25,35 @@ export default async function FundPage({
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-6 py-10">
       <div>
-        <Link href={`/trips/${id}`} className="text-sm text-neutral-500">
+        <Link href={`/trips/${id}`} className="text-sm text-ink-soft">
           ← 回總覽
         </Link>
-        <h1 className="mt-1 text-2xl font-bold">公費池</h1>
+        <h1 className="mt-1 font-serif-tc text-2xl font-bold text-stamp">公費池</h1>
       </div>
 
       {fund === null ? (
         <CreateFundForm tripId={id} />
       ) : (
         <>
-          <div className="rounded-lg border border-neutral-200 p-4">
-            <p className="text-sm text-neutral-500">
+          <div className="rounded-xl border border-dashed border-washi bg-paper p-4">
+            <p className="text-sm text-ink-soft">
               {fund.name}（{fund.currency}）
             </p>
             <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
               <div>
-                <dt className="text-xs text-neutral-400">提撥</dt>
+                <dt className="text-xs text-ink-muted">提撥</dt>
                 <dd>
                   <Money value={fund.contributionTotal} currency={fund.currency} />
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-400">支用</dt>
+                <dt className="text-xs text-ink-muted">支用</dt>
                 <dd>
                   <Money value={fund.spendTotal} currency={fund.currency} />
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-400">餘額</dt>
+                <dt className="text-xs text-ink-muted">餘額</dt>
                 <dd className="font-semibold">
                   <Money value={fund.balance} currency={fund.currency} />
                 </dd>
@@ -69,26 +69,26 @@ export default async function FundPage({
           <section className="flex flex-col gap-2">
             <h2 className="text-lg font-semibold">收支明細</h2>
             {fund.entries.length === 0 ? (
-              <p className="text-sm text-neutral-400">尚無任何提撥或支用</p>
+              <p className="text-sm text-ink-muted">尚無任何提撥或支用</p>
             ) : (
               <ul className="flex flex-col gap-2">
                 {fund.entries.map((entry) => (
                   <li
                     key={entry.id}
-                    className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2 text-sm"
+                    className="flex items-center justify-between rounded-xl border border-dashed border-washi bg-paper px-3 py-2 text-sm"
                   >
                     <div>
                       <p>
                         <span
                           className={
-                            entry.type === "CONTRIBUTION" ? "text-emerald-600" : "text-amber-600"
+                            entry.type === "CONTRIBUTION" ? "text-seal" : "text-amber-600"
                           }
                         >
                           {entry.type === "CONTRIBUTION" ? "提撥" : "支用"}
                         </span>{" "}
                         <Money value={entry.amount} currency={fund.currency} />
                       </p>
-                      <p className="text-xs text-neutral-400">
+                      <p className="text-xs text-ink-muted">
                         {entry.memberName ?? "—"}
                         {entry.note ?? entry.linkedExpenseDescription ?? ""}
                       </p>

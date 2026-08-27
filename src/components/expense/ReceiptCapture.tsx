@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Emoji } from "@/components/ui/Emoji";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { compressReceiptImage, extractTakenAt } from "@/lib/parse/preprocess";
 
@@ -81,7 +82,10 @@ export function ReceiptCapture({ tripId }: { tripId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 px-6 py-12 text-center text-sm text-neutral-500">
+      <label
+        className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-washi bg-paper px-6 py-12 text-center text-sm text-ink-soft ${status === "uploading" ? "opacity-60" : "hover:border-stamp-mid"}`}
+      >
+        <Emoji name="camera" size={32} />
         {status === "uploading" ? "上傳並解析中…" : "點此拍照或選擇收據照片"}
         <input
           type="file"
@@ -100,7 +104,7 @@ export function ReceiptCapture({ tripId }: { tripId: string }) {
 
       <a
         href={`/trips/${tripId}/expenses/new`}
-        className="text-center text-sm text-neutral-500 underline"
+        className="text-center text-sm text-ink-soft underline"
       >
         或改成手動輸入
       </a>

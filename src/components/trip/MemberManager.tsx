@@ -9,7 +9,7 @@ import {
   updateMemberAction,
 } from "@/app/trips/[id]/members/actions";
 import { DeleteButton } from "@/components/ui/DeleteButton";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field, inputClass, selectClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { INITIAL_ACTION_STATE } from "@/lib/actionState";
@@ -42,7 +42,7 @@ function CreateGroupForm({ tripId }: { tripId: string }) {
 
 function GroupItem({ tripId, group }: { tripId: string; group: GroupRow }) {
   return (
-    <li className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
+    <li className="flex items-center justify-between rounded-xl border border-dashed border-washi bg-paper px-3 py-2">
       <span className="text-sm">{group.name}</span>
       <DeleteButton
         action={deleteGroupAction.bind(null, tripId, group.id)}
@@ -55,7 +55,7 @@ function GroupItem({ tripId, group }: { tripId: string; group: GroupRow }) {
 function CreateMemberForm({ tripId, groups }: { tripId: string; groups: GroupRow[] }) {
   const [state, formAction] = useActionState(createMemberAction, INITIAL_ACTION_STATE);
   return (
-    <form action={formAction} className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4">
+    <form action={formAction} className="flex flex-col gap-3 rounded-xl border border-dashed border-washi bg-paper p-4">
       <input type="hidden" name="tripId" value={tripId} />
       <FormMessage error={state.error} />
       <Field label="姓名" htmlFor="member-name" errors={state.fieldErrors?.name}>
@@ -63,7 +63,7 @@ function CreateMemberForm({ tripId, groups }: { tripId: string; groups: GroupRow
       </Field>
       <div className="flex gap-3">
         <Field label="組別" htmlFor="member-group">
-          <select id="member-group" name="groupId" defaultValue="" className={inputClass}>
+          <select id="member-group" name="groupId" defaultValue="" className={selectClass}>
             <option value="">未分組</option>
             {groups.map((group) => (
               <option key={group.id} value={group.id}>
@@ -103,32 +103,38 @@ function MemberItem({
   );
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3">
-      <form action={formAction} className="flex flex-wrap items-end gap-2">
+    <li className="flex flex-col gap-2 rounded-xl border border-dashed border-washi bg-paper p-3">
+      <form action={formAction} className="flex flex-col gap-2">
         <input type="hidden" name="tripId" value={tripId} />
         <input
           name="name"
           type="text"
           defaultValue={member.name}
           required
-          className={`${inputClass} w-28`}
+          className={inputClass}
         />
-        <select name="groupId" defaultValue={member.groupId ?? ""} className={`${inputClass} w-28`}>
-          <option value="">未分組</option>
-          {groups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
-        <input
-          name="weight"
-          type="text"
-          inputMode="decimal"
-          defaultValue={member.weight}
-          className={`${inputClass} w-20`}
-        />
-        <SubmitButton>更新</SubmitButton>
+        <div className="flex items-center gap-2">
+          <select
+            name="groupId"
+            defaultValue={member.groupId ?? ""}
+            className={`${selectClass} flex-1`}
+          >
+            <option value="">未分組</option>
+            {groups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+          <input
+            name="weight"
+            type="text"
+            inputMode="decimal"
+            defaultValue={member.weight}
+            className={`${inputClass} w-16`}
+          />
+          <SubmitButton>更新</SubmitButton>
+        </div>
       </form>
       <div className="flex items-center justify-between">
         <FormMessage error={state.error} />
@@ -153,7 +159,7 @@ export function MemberManager({
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-neutral-600">組別</h2>
+        <h2 className="text-sm font-semibold text-ink-soft">組別</h2>
         <ul className="flex flex-col gap-2">
           {groups.map((group) => (
             <GroupItem key={group.id} tripId={tripId} group={group} />
@@ -163,7 +169,7 @@ export function MemberManager({
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-neutral-600">成員</h2>
+        <h2 className="text-sm font-semibold text-ink-soft">成員</h2>
         <ul className="flex flex-col gap-2">
           {members.map((member) => (
             <MemberItem key={member.id} tripId={tripId} member={member} groups={groups} />

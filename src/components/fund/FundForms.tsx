@@ -5,7 +5,7 @@ import {
   createFundAction,
   createFundContributionAction,
 } from "@/app/trips/[id]/funds/actions";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field, inputClass, selectClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { INITIAL_ACTION_STATE } from "@/lib/actionState";
@@ -16,12 +16,12 @@ export function CreateFundForm({ tripId }: { tripId: string }) {
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="tripId" value={tripId} />
-      <p className="text-sm text-neutral-500">這個行程還沒有公費池，先建立一個。</p>
+      <p className="text-sm text-ink-soft">這個行程還沒有公費池，先建立一個。</p>
       <Field label="名稱" htmlFor="name" errors={state.fieldErrors?.name}>
         <input id="name" name="name" type="text" required defaultValue="公費" className={inputClass} />
       </Field>
       <Field label="幣別" htmlFor="currency" errors={state.fieldErrors?.currency}>
-        <select id="currency" name="currency" defaultValue="JPY" className={inputClass}>
+        <select id="currency" name="currency" defaultValue="JPY" className={selectClass}>
           {COMMON_CURRENCIES.map((currency) => (
             <option key={currency} value={currency}>
               {currency}
@@ -51,7 +51,7 @@ export function ContributionForm({
       <input type="hidden" name="fundId" value={fundId} />
       <div className="flex gap-3">
         <Field label="成員" htmlFor="memberId" errors={state.fieldErrors?.memberId}>
-          <select id="memberId" name="memberId" required className={inputClass}>
+          <select id="memberId" name="memberId" required className={selectClass}>
             {members.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.name}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field, inputClass, selectClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { FixedRatesEditor } from "@/components/trip/FixedRatesEditor";
@@ -38,7 +38,10 @@ export function TripForm({
   const [state, formAction] = useActionState(action, INITIAL_ACTION_STATE);
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form
+      action={formAction}
+      className="flex flex-col gap-4 rounded-xl border border-dashed border-washi bg-paper p-5"
+    >
       <FormMessage error={state.error} />
 
       <Field label="行程名稱" htmlFor="name" errors={state.fieldErrors?.name}>
@@ -92,7 +95,7 @@ export function TripForm({
           id="homeCurrency"
           name="homeCurrency"
           defaultValue={initial?.homeCurrency ?? "TWD"}
-          className={inputClass}
+          className={selectClass}
         >
           {COMMON_CURRENCIES.map((currency) => (
             <option key={currency} value={currency}>

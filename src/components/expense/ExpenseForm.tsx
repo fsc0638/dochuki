@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useRef, useState } from "react";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field, inputClass, selectClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { SplitModePicker } from "@/components/expense/SplitModePicker";
@@ -237,7 +237,7 @@ export function ExpenseForm({
             id="category"
             name="category"
             defaultValue={initial?.category ?? EXPENSE_CATEGORIES[0]}
-            className={inputClass}
+            className={selectClass}
           >
             {EXPENSE_CATEGORIES.map((category) => (
               <option key={category} value={category}>
@@ -264,7 +264,7 @@ export function ExpenseForm({
           name="payerId"
           value={payerId}
           onChange={(event) => setPayerId(event.target.value)}
-          className={inputClass}
+          className={selectClass}
         >
           {members.map((member) => (
             <option key={member.id} value={member.id}>
@@ -301,7 +301,7 @@ export function ExpenseForm({
             readOnly={fundSpend}
             value={currency}
             onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-            className={`${inputClass} w-20 uppercase ${fundSpend ? "bg-neutral-100" : ""} ${lowConfidenceClass("currency")}`}
+            className={`${inputClass} w-20 uppercase ${fundSpend ? "bg-paper-dark" : ""} ${lowConfidenceClass("currency")}`}
           />
         </Field>
       </div>
@@ -350,7 +350,7 @@ export function ExpenseForm({
 
       {(splitMode === "EQUAL" || splitMode === "WEIGHT") && (
         <fieldset className="flex flex-col gap-1">
-          <legend className="text-sm font-medium text-neutral-700">參與者</legend>
+          <legend className="text-sm font-medium text-ink-soft">參與者</legend>
           {members.map((member) => (
             <label key={member.id} className="flex items-center gap-2 text-sm">
               <input
@@ -369,7 +369,7 @@ export function ExpenseForm({
               />
               {member.name}
               {splitMode === "WEIGHT" && (
-                <span className="text-xs text-neutral-400">權重 {member.weight}</span>
+                <span className="text-xs text-ink-muted">權重 {member.weight}</span>
               )}
             </label>
           ))}
@@ -383,7 +383,7 @@ export function ExpenseForm({
             name="groupId"
             value={groupId}
             onChange={(event) => setGroupId(event.target.value)}
-            className={inputClass}
+            className={selectClass}
           >
             {groups.length === 0 && <option value="">（尚無組別）</option>}
             {groups.map((group) => (
@@ -397,7 +397,7 @@ export function ExpenseForm({
 
       {splitMode === "EXACT" && (
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-medium text-neutral-700">
+          <legend className="text-sm font-medium text-ink-soft">
             逐人指定金額（留空代表這人不用付）
           </legend>
           {members.map((member) => (

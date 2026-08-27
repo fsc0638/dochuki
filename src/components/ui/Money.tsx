@@ -20,7 +20,7 @@ export function Money({
   return (
     <span className={className}>
       {formatMoney(fromDb(value), currency)}
-      <span className="ml-1 text-xs text-neutral-400">{currency}</span>
+      <span className="ml-1 text-xs text-ink-muted">{currency}</span>
     </span>
   );
 }

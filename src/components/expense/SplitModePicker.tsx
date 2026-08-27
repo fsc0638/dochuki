@@ -16,15 +16,15 @@ export function SplitModePicker({
 }) {
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="text-sm font-medium text-neutral-700">分攤方式</legend>
+      <legend className="text-sm font-medium text-ink-soft">分攤方式</legend>
       <div className="grid grid-cols-2 gap-2">
         {OPTIONS.map((option) => (
           <label
             key={option.value}
-            className={`flex cursor-pointer flex-col rounded-md border px-3 py-2 text-sm ${
+            className={`flex cursor-pointer flex-col rounded-xl border border-dashed px-3 py-2 text-sm ${
               value === option.value
-                ? "border-neutral-900 bg-neutral-50"
-                : "border-neutral-300"
+                ? "border-stamp bg-stamp-pale"
+                : "border-washi"
             }`}
           >
             <span className="flex items-center gap-2 font-medium">
@@ -37,7 +37,7 @@ export function SplitModePicker({
               />
               {option.label}
             </span>
-            <span className="text-xs text-neutral-500">{option.hint}</span>
+            <span className="text-xs text-ink-soft">{option.hint}</span>
           </label>
         ))}
       </div>

@@ -22,14 +22,14 @@ export default async function ReportsPage({
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-6 py-10">
       <div>
-        <Link href={`/trips/${id}`} className="text-sm text-neutral-500">
+        <Link href={`/trips/${id}`} className="text-sm text-ink-soft">
           ← 回總覽
         </Link>
-        <h1 className="mt-1 text-2xl font-bold">報表匯出</h1>
-        <p className="mt-1 text-sm text-neutral-500">{trip.name}</p>
+        <h1 className="mt-1 font-serif-tc text-2xl font-bold text-stamp">報表匯出</h1>
+        <p className="mt-1 text-sm text-ink-soft">{trip.name}</p>
       </div>
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-ink-muted">
         三種格式的數字都來自同一份彙總，互相一致；PDF 版型含每人總計、公費收支與收據縮圖索引。
       </p>
 
@@ -38,7 +38,7 @@ export default async function ReportsPage({
           <a
             key={link.href}
             href={link.href}
-            className="rounded-md border border-neutral-300 px-4 py-3 text-center text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            className="rounded-xl border border-dashed border-washi bg-paper px-4 py-3 text-center text-sm font-medium text-ink hover:border-stamp-mid"
           >
             {link.label}
           </a>

@@ -1,6 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Noto_Serif_TC } from "next/font/google";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import "./globals.css";
+
+// 只用在標題／金額這類「有個性」的位置，一般內文維持系統字體——思源宋體
+// 含完整 CJK 字符，全站鋪開會拖慢首次載入
+const notoSerifTC = Noto_Serif_TC({
+  subsets: ["latin"],
+  weight: ["500", "700"],
+  variable: "--font-noto-serif-tc",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "道中記 Dōchūki",
@@ -21,7 +31,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#78350f",
+  themeColor: "#712b13",
 };
 
 export default function RootLayout({
@@ -30,10 +40,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-Hant">
-      <body>
-        {children}
+    <html lang="zh-Hant" className={notoSerifTC.variable}>
+      <body className="flex min-h-screen flex-col">
+        <div className="flex-1">{children}</div>
         <ServiceWorkerRegister />
+        <footer className="mx-auto w-full max-w-md px-6 py-4 text-center text-xs text-ink-muted">
+          Icons by{" "}
+          <a href="https://openmoji.org" target="_blank" rel="noreferrer" className="underline">
+            OpenMoji
+          </a>
+          （CC BY-SA 4.0）
+        </footer>
       </body>
     </html>
   );

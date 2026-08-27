@@ -15,11 +15,11 @@ export default async function NewReceiptPage({
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-6 py-10">
       <div>
-        <Link href={`/trips/${id}`} className="text-sm text-neutral-500">
+        <Link href={`/trips/${id}`} className="text-sm text-ink-soft">
           ← 回總覽
         </Link>
-        <h1 className="mt-1 text-2xl font-bold">拍照記帳</h1>
-        <p className="mt-1 text-sm text-neutral-500">
+        <h1 className="mt-1 font-serif-tc text-2xl font-bold text-ink">拍照記帳</h1>
+        <p className="mt-1 text-sm text-ink-soft">
           自動辨識店名、金額、品項，下一步再確認或修改。
         </p>
       </div>

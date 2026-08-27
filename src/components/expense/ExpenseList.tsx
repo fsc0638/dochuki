@@ -21,25 +21,25 @@ export function ExpenseList({
   homeCurrency: string;
 }) {
   if (expenses.length === 0) {
-    return <p className="text-sm text-neutral-500">沒有符合條件的支出。</p>;
+    return <p className="text-sm text-ink-soft">沒有符合條件的支出。</p>;
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-3">
       {expenses.map((expense) => (
         <li key={expense.id}>
           <Link
             href={`/trips/${tripId}/expenses/${expense.id}`}
-            className="flex items-center justify-between rounded-lg border border-neutral-200 px-4 py-3 hover:border-neutral-400"
+            className="flex items-center justify-between rounded-xl border border-dashed border-washi bg-paper px-4 py-3 hover:border-stamp-mid"
           >
             <div>
               <div className="flex items-center gap-2 text-sm font-medium">
                 {expense.description}
-                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+                <span className="rounded-full bg-paper-dark px-1.5 py-0.5 text-xs text-ink-soft">
                   {expense.category}
                 </span>
               </div>
-              <div className="text-xs text-neutral-400">
+              <div className="text-xs text-ink-muted">
                 {expense.paidAt.toISOString().slice(0, 10)} ・
                 {expense.payer?.name ?? "（無付款人）"} 付款 ・
                 {SPLIT_MODE_LABEL[expense.splitMode]} ・{expense.shares.length} 人分攤
@@ -55,7 +55,7 @@ export function ExpenseList({
                 <Money
                   value={expense.amountHome}
                   currency={homeCurrency}
-                  className="block text-xs text-neutral-400 tabular-nums"
+                  className="block text-xs text-ink-muted tabular-nums"
                 />
               )}
             </div>

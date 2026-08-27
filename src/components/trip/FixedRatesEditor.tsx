@@ -27,7 +27,7 @@ export function FixedRatesEditor({
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-sm font-medium text-neutral-700">
+      <span className="text-sm font-medium text-ink-soft">
         固定匯率（選填，不設定則走參考匯率或手動輸入）
       </span>
       {rows.map((row) => (
@@ -40,7 +40,7 @@ export function FixedRatesEditor({
             maxLength={3}
             className={`${inputClass} w-20 uppercase`}
           />
-          <span className="text-sm text-neutral-500">兌 1 記帳幣 =</span>
+          <span className="text-sm text-ink-soft">兌 1 記帳幣 =</span>
           <input
             type="text"
             name="fixedRates.rate"
@@ -61,7 +61,7 @@ export function FixedRatesEditor({
       <button
         type="button"
         onClick={() => setRows((prev) => [...prev, { key: nextKey++, currency: "", rate: "" }])}
-        className="self-start text-sm text-neutral-600 underline"
+        className="self-start text-sm text-ink-soft underline"
       >
         + 新增一列
       </button>

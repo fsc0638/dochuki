@@ -9,11 +9,11 @@ export function MemberTotals({
   currency: string;
 }) {
   if (totals.length === 0) {
-    return <p className="text-sm text-neutral-500">還沒有成員。</p>;
+    return <p className="text-sm text-ink-soft">還沒有成員。</p>;
   }
 
   return (
-    <ul className="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200">
+    <ul className="divide-y divide-dashed divide-washi-light overflow-hidden rounded-xl border border-dashed border-washi">
       {totals.map((member) => (
         <li
           key={member.memberId}
@@ -22,7 +22,7 @@ export function MemberTotals({
           <div>
             <div className="text-sm font-medium">{member.name}</div>
             {member.groupName !== null && (
-              <div className="text-xs text-neutral-400">{member.groupName}</div>
+              <div className="text-xs text-ink-muted">{member.groupName}</div>
             )}
           </div>
           <Money

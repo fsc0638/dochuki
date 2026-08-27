@@ -29,17 +29,17 @@ export function SplitPreview({
   homeCurrency: string;
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-neutral-300 p-3">
-      <div className="mb-2 text-xs font-medium text-neutral-500">分攤預覽</div>
+    <div className="rounded-xl border border-dashed border-washi p-3">
+      <div className="mb-2 text-xs font-medium text-ink-soft">分攤預覽</div>
 
       {status.kind === "empty" && (
-        <p className="text-sm text-neutral-400">填寫金額與參與者後會顯示預覽</p>
+        <p className="text-sm text-ink-muted">填寫金額與參與者後會顯示預覽</p>
       )}
       {status.kind === "error" && (
         <p className="text-sm text-red-600">{status.message}</p>
       )}
       {status.kind === "needs-server-rate" && (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-ink-soft">
           此幣別尚無固定匯率也未手動輸入，送出後會自動查詢參考匯率
           （無法在送出前預覽實際金額，但分攤比例已固定）。
         </p>
