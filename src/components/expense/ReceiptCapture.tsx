@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Emoji } from "@/components/ui/Emoji";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { compressReceiptImage, extractTakenAt } from "@/lib/parse/preprocess";
@@ -25,6 +25,27 @@ export function ReceiptCapture({ tripId }: { tripId: string }) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 拍照解析本來就需要連線呼叫 Gemini，離線時直接停用、引導去手動輸入
+  // （手動輸入支援離線佇列，見 ExpenseForm 的 offlineCapable）。初始值
+  // 樂觀設為 true，真正的狀態要等掛載後才讀 navigator.onLine，避免 SSR
+  // 沒有 navigator 導致 hydration mismatch
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    function handleOnline() {
+      setIsOnline(true);
+    }
+    function handleOffline() {
+      setIsOnline(false);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   async function handleFile(file: File): Promise<void> {
     setStatus("uploading");
@@ -83,16 +104,26 @@ export function ReceiptCapture({ tripId }: { tripId: string }) {
   return (
     <div className="flex flex-col gap-4">
       <label
-        className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-washi bg-paper px-6 py-12 text-center text-sm text-ink-soft ${status === "uploading" ? "opacity-60" : "hover:border-stamp-mid"}`}
+        className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-washi bg-paper px-6 py-12 text-center text-sm ${
+          !isOnline
+            ? "cursor-not-allowed text-ink-muted"
+            : status === "uploading"
+              ? "cursor-pointer text-ink-soft opacity-60"
+              : "cursor-pointer text-ink-soft hover:border-stamp-mid"
+        }`}
       >
         <Emoji name="camera" size={32} />
-        {status === "uploading" ? "上傳並解析中…" : "點此拍照或選擇收據照片"}
+        {!isOnline
+          ? "離線中，無法辨識收據——請連上網路後再試，或改用下方手動輸入"
+          : status === "uploading"
+            ? "上傳並解析中…"
+            : "點此拍照或選擇收據照片"}
         <input
           type="file"
           accept="image/*"
           capture="environment"
           className="hidden"
-          disabled={status === "uploading"}
+          disabled={!isOnline || status === "uploading"}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file !== undefined) void handleFile(file);

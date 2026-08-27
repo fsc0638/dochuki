@@ -81,3 +81,76 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// ---- 離線佇列 background sync（P6）----
+// 這支檔案是純手寫、未打包的 JS，沒辦法 import src/lib/offline/db.ts 那份
+// 用 idb 套件寫的版本，這裡用原生 IndexedDB API 手寫一份等價邏輯操作
+// 同一個資料庫。DB_NAME／DB_VERSION／OUTBOX_STORE 三個值必須跟該檔案
+// 完全一致，否則兩邊會各自開出不同的資料庫。
+//
+// Background Sync 是非標準 API，只有 Chromium 系瀏覽器會實際觸發這個
+// 事件——Safari 完全不支援，不能只靠這裡；真正的保底機制是
+// src/components/OutboxAutoSync.tsx 的 online 事件與頁面重新可見檢查。
+const OUTBOX_DB_NAME = "dochuki-offline";
+const OUTBOX_DB_VERSION = 1;
+const OUTBOX_STORE = "outbox";
+
+function openOutboxDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(OUTBOX_DB_NAME, OUTBOX_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(OUTBOX_STORE)) {
+        const store = db.createObjectStore(OUTBOX_STORE, { keyPath: "id" });
+        store.createIndex("by-tripId", "tripId");
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getAllOutboxItems(db) {
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(OUTBOX_STORE, "readonly").objectStore(OUTBOX_STORE).getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function deleteOutboxItem(db, id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OUTBOX_STORE, "readwrite");
+    tx.objectStore(OUTBOX_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function syncOutboxFromServiceWorker() {
+  const db = await openOutboxDb();
+  const items = await getAllOutboxItems(db);
+  for (const item of items) {
+    try {
+      const response = await fetch(`/api/trips/${item.tripId}/expenses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item.payload),
+      });
+      if (response.ok) {
+        await deleteOutboxItem(db, item.id);
+      }
+      // 失敗（含伺服器回傳非 2xx）就留著不刪——SW 背景執行沒有機會讓使用者
+      // 立刻看到錯誤訊息，等頁面重新打開時交給 OutboxStatus 顯示、使用者
+      // 手動重試
+    } catch {
+      // 網路仍然不通：這筆送不出去，繼續處理下一筆，不要讓一筆失敗擋住其他筆
+    }
+  }
+}
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-outbox") {
+    event.waitUntil(syncOutboxFromServiceWorker());
+  }
+});

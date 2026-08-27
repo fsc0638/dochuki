@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Serif_TC } from "next/font/google";
+import { OutboxAutoSync } from "@/components/OutboxAutoSync";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
@@ -44,6 +45,7 @@ export default function RootLayout({
       <body className="flex min-h-screen flex-col">
         <div className="flex-1">{children}</div>
         <ServiceWorkerRegister />
+        <OutboxAutoSync />
         <footer className="mx-auto w-full max-w-md px-6 py-4 text-center text-xs text-ink-muted">
           Icons by{" "}
           <a href="https://openmoji.org" target="_blank" rel="noreferrer" className="underline">

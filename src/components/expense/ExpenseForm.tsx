@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useMemo, useRef, useState } from "react";
 import { Field, inputClass, selectClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
@@ -10,8 +11,9 @@ import { INITIAL_ACTION_STATE, type ActionState } from "@/lib/actionState";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { convertToHome, resolveRate } from "@/lib/money/convert";
 import { Money as MoneyDecimal } from "@/lib/money/decimal";
+import { saveExpenseToOutbox } from "@/lib/offline/outbox";
 import { splitExpense, type SplitParticipant } from "@/lib/money/split";
-import type { SplitModeInput } from "@/lib/schemas/expense";
+import { parseExpenseFormData, type SplitModeInput } from "@/lib/schemas/expense";
 
 export interface ExpenseFormMember {
   id: string;
@@ -66,6 +68,7 @@ export function ExpenseForm({
   submitLabel,
   lowConfidenceFields,
   fundCurrency,
+  offlineCapable = false,
 }: {
   action: (prevState: ActionState, formData: FormData) => Promise<ActionState>;
   tripId: string;
@@ -79,8 +82,12 @@ export function ExpenseForm({
   lowConfidenceFields?: Set<LowConfidenceField>;
   /** 這個行程的公費幣別；沒有公費池時傳 undefined，不顯示「由公費支付」選項 */
   fundCurrency?: string;
+  /** 只有「新增支出」頁面傳 true——離線佇列範圍刻意只做新增，不做編輯
+   * （編輯涉及覆蓋既有資料的衝突處理，複雜度不成比例，見 CLAUDE.md 進度日誌） */
+  offlineCapable?: boolean;
 }) {
   const [state, formAction] = useActionState(action, INITIAL_ACTION_STATE);
+  const [offlineSaved, setOfflineSaved] = useState(false);
 
   function lowConfidenceClass(field: LowConfidenceField): string {
     return lowConfidenceFields?.has(field) === true
@@ -210,8 +217,45 @@ export function ExpenseForm({
     memberById,
   ]);
 
+  /** 離線時攔截送出：Server Action 無法送達伺服器，改存本機佇列，稍後
+   * 由 src/lib/offline/outbox.ts 的 syncOutbox() 補送。有網路時完全不
+   * 介入，讓 <form action={formAction}> 走原本的路徑。
+   *
+   * 刻意不用 router.push() 導頁——Next.js App Router 的 client-side
+   * navigation 到一個還沒 prefetch 過的頁面，一樣要重新跟伺服器要 RSC
+   * payload，離線時會直接卡住（實測過：跳轉逾時，不是假設）。離線分支
+   * 只能留在原地做純 client 端的 UI 切換，不能觸發任何需要網路的導航。
+   */
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (!offlineCapable || navigator.onLine) return;
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const memberIds = members.map((m) => m.id);
+    const payload = parseExpenseFormData(formData, memberIds);
+    await saveExpenseToOutbox(tripId, payload);
+    setOfflineSaved(true);
+  }
+
+  if (offlineSaved) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-seal bg-seal-pale p-6 text-center">
+        <p className="text-sm font-medium text-seal">已離線儲存，連線恢復後會自動送出</p>
+        <button
+          type="button"
+          onClick={() => setOfflineSaved(false)}
+          className="rounded-full bg-stamp px-4 py-2 text-sm font-medium text-paper"
+        >
+          繼續新增下一筆
+        </button>
+        <Link href={`/trips/${tripId}`} className="text-xs text-ink-soft underline">
+          回總覽（需要連線才能導頁）
+        </Link>
+      </div>
+    );
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form action={formAction} onSubmit={handleSubmit} className="flex flex-col gap-4">
       <input type="hidden" name="tripId" value={tripId} />
       <FormMessage error={state.error} />
       {lowConfidenceFields !== undefined && lowConfidenceFields.size > 0 && (

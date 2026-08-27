@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ExpenseFilters } from "@/components/expense/ExpenseFilters";
 import { ExpenseList } from "@/components/expense/ExpenseList";
+import { OutboxStatus } from "@/components/expense/OutboxStatus";
 import { MemberTotals } from "@/components/trip/MemberTotals";
 import { Emoji } from "@/components/ui/Emoji";
 import { type ExpenseFilter, loadExpenses, loadMemberTotals, loadTrip } from "@/lib/trips/load";
@@ -74,6 +75,7 @@ export default async function TripOverviewPage({
       </section>
 
       <section className="flex flex-col gap-3">
+        <OutboxStatus tripId={id} />
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink-soft">支出</h2>
           <div className="flex gap-2">

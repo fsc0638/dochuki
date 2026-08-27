@@ -123,6 +123,10 @@ export default async function NewExpensePage({
         initial={initial}
         lowConfidenceFields={flaggedFields}
         fundCurrency={trip.funds[0]?.currency}
+        // 帶著 receiptId 表示走拍照解析流程進來——離線佇列不知道怎麼補上
+        // 收據關聯（createExpense 的 receiptContext 要另外查 DB），只有純
+        // 手動輸入才啟用離線儲存
+        offlineCapable={receiptId === undefined}
       />
     </main>
   );
