@@ -53,6 +53,7 @@ export default async function TripOverviewPage({
           {[
             { href: `/trips/${id}/members`, label: "成員" },
             { href: `/trips/${id}/funds`, label: "公費" },
+            { href: `/trips/${id}/settlement`, label: "清償" },
             { href: `/trips/${id}/reports`, label: "報表" },
             { href: `/trips/${id}/settings`, label: "設定" },
           ].map((item) => (

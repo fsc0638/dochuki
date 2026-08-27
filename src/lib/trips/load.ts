@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { Money } from "@/lib/money/decimal";
 import { fromDb } from "@/lib/money/fromDb";
 import { summarizeFund } from "@/lib/money/fund";
+import { computeSettlement } from "@/lib/money/settlement";
 
 /**
  * 行程讀取層。
@@ -128,6 +129,95 @@ export async function loadMemberTotals(tripId: string): Promise<MemberTotal[]> {
     groupName: member.group?.name ?? null,
     expenseShareTotal: totals.get(member.id) ?? new Money(0),
   }));
+}
+
+export interface SettlementMemberBalance {
+  memberId: string;
+  name: string;
+  /** 該成員代墊總額（排除公費支付） */
+  paidHome: Decimal;
+  /** 該成員應分攤總額（排除公費支付） */
+  shareHome: Decimal;
+  /** paidHome − shareHome：正值代表該收錢，負值代表該付錢 */
+  netHome: Decimal;
+}
+
+export interface SettlementTransferView {
+  fromMemberId: string;
+  fromName: string;
+  toMemberId: string;
+  toName: string;
+  amountHome: Decimal;
+}
+
+export interface SettlementData {
+  balances: SettlementMemberBalance[];
+  transfers: SettlementTransferView[];
+}
+
+/**
+ * 清償計畫：誰該轉給誰多少錢。公費支付（fundSpend）的支出排除在外——那筆
+ * 錢的墊付方是公費池，不是某個人自己的錢，公費的收支已經有自己的提撥／
+ * 餘額機制（見 funds 頁），不該混進「人與人」的清償計畫。
+ */
+export async function loadSettlementData(tripId: string): Promise<SettlementData> {
+  const members = await prisma.member.findMany({
+    where: { tripId },
+    orderBy: { name: "asc" },
+  });
+
+  const [shareGrouped, paidGrouped] = await Promise.all([
+    prisma.expenseShare.groupBy({
+      by: ["memberId"],
+      where: { expense: { tripId, fundSpend: false } },
+      _sum: { shareHome: true },
+    }),
+    prisma.expense.groupBy({
+      by: ["payerId"],
+      where: { tripId, fundSpend: false, payerId: { not: null } },
+      _sum: { amountHome: true },
+    }),
+  ]);
+
+  const shareByMember = new Map(
+    shareGrouped.map((row) => [row.memberId, fromDb(row._sum.shareHome ?? 0)]),
+  );
+  const paidByMember = new Map(
+    paidGrouped
+      .filter((row): row is typeof row & { payerId: string } => row.payerId !== null)
+      .map((row) => [row.payerId, fromDb(row._sum.amountHome ?? 0)]),
+  );
+
+  const balances: SettlementMemberBalance[] = members.map((member) => {
+    const paidHome = paidByMember.get(member.id) ?? new Money(0);
+    const shareHome = shareByMember.get(member.id) ?? new Money(0);
+    return {
+      memberId: member.id,
+      name: member.name,
+      paidHome,
+      shareHome,
+      netHome: paidHome.minus(shareHome),
+    };
+  });
+
+  const transfers = computeSettlement(
+    balances.map((b) => ({
+      memberId: b.memberId,
+      paidHome: b.paidHome,
+      shareHome: b.shareHome,
+    })),
+  );
+
+  const nameById = new Map(members.map((m) => [m.id, m.name]));
+  const transferViews: SettlementTransferView[] = transfers.map((t) => ({
+    fromMemberId: t.fromMemberId,
+    fromName: nameById.get(t.fromMemberId) ?? t.fromMemberId,
+    toMemberId: t.toMemberId,
+    toName: nameById.get(t.toMemberId) ?? t.toMemberId,
+    amountHome: t.amountHome,
+  }));
+
+  return { balances, transfers: transferViews };
 }
 
 export interface FundEntryView {
