@@ -1,0 +1,25 @@
+{
+  "name": "道中記 Dōchūki",
+  "short_name": "道中記",
+  "description": "旅遊記帳 PWA：拍照收據解析、多幣別分攤、一鍵匯出彙整總表",
+  "start_url": "/trips",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#78350f",
+  "theme_color": "#78350f",
+  "lang": "zh-Hant",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

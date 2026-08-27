@@ -20,6 +20,9 @@ importers:
       decimal.js:
         specifier: ^10.6.0
         version: 10.6.0
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       exceljs:
         specifier: ^4.4.0
         version: 4.4.0
@@ -35,6 +38,9 @@ importers:
       playwright:
         specifier: ^1.62.1
         version: 1.62.1
+      prisma:
+        specifier: ^7.9.1
+        version: 7.9.1(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
       react:
         specifier: 19.1.0
         version: 19.1.0
@@ -60,18 +66,12 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.2.4(@types/react@19.2.18)
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
       eslint:
         specifier: ^9
         version: 9.39.5(jiti@2.7.0)(supports-color@7.2.0)
       eslint-config-next:
         specifier: 15.5.23
         version: 15.5.23(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
-      prisma:
-        specifier: ^7.9.1
-        version: 7.9.1(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
       tailwindcss:
         specifier: ^4
         version: 4.3.3

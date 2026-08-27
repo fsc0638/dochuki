@@ -91,7 +91,9 @@ P5 要開 80/443），兩層都要各自開一次，只開 OCI 那層、VM 內 i
    - `DATABASE_URL`（對齊 docker-compose 的 5442 port 映射）
    - `GEMINI_API_KEY`（2026-08-25 起收據解析改用 Gemini，本機有的話這裡重新
      申請或直接貼——這一步只有你自己在 VM 終端機做，不經過我）
-4. `docker compose up -d` 起 Postgres
+4. `docker compose up -d db` 起 Postgres（P5 之後 docker-compose.yml 多了一個 app
+   服務給容器化部署用，裸指令 `docker compose up -d` 會連 app 一起建置/啟動，
+   這裡只需要資料庫，明確帶 `db`）
 5. `pnpm install`
 6. `pnpm prisma migrate dev`
 7. `pnpm prisma db seed`（灌新潟迴歸 fixture）

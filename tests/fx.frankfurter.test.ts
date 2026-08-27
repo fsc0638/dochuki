@@ -6,7 +6,8 @@ import { getDailyRate } from "@/lib/fx/frankfurter";
 /**
  * fx/frankfurter.ts 測試。
  *
- * ★ 本檔需要本機 docker compose 的 PostgreSQL 已啟動（`docker compose up -d`）
+ * ★ 本檔需要本機 docker compose 的 PostgreSQL 已啟動（`docker compose up -d db`——
+ *   docker-compose.yml 還有一個 app 服務是 P5 容器化部署用的，這裡不需要它）
  * ——快取讀寫是這個模組的核心行為，不值得為了「不依賴 DB」而用假的記憶體
  * 快取取代測試對象。這是本專案目前唯一的已知限制：CI 若要跑 `pnpm test`，
  * 需先確保 DB 可連線（尚未設定 CI，此限制留待 P5 收尾時處理）。

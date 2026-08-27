@@ -351,6 +351,12 @@ Rules:
 
 `manifest.json`（name「道中記 Dōchūki」、short_name「道中記」）+ Service Worker（next-pwa 或手寫 workbox）。P5 僅要求可安裝與快取殼層；P6 加離線佇列：入帳寫 IndexedDB `outbox`，連線恢復由 SW background sync 補傳，衝突以 client 時間戳後寫覆蓋（單人使用前提）。
 
+> **P5 落地差異**（2026-08-25）：Service Worker 改成純手寫的 `public/sw.js`，不用
+> next-pwa／workbox——這兩個都是打包期插件，這裡的需求（只快取 `/_next/static/`
+> 與 icons，頁面／API 一律 network-only）用瀏覽器原生 Cache API 十幾行就寫完，
+> 加框架反而多一層跟 Turbopack 的相容性風險。金額資料絕不進快取，是刻意設計，
+> 不是遺漏——避免使用者離線時看到看似正常、實則過期的帳務數字。
+
 ## 9. 分階段驗收（Definition of Done）
 
 | Phase | 交付 | 驗收（全部必須為真） |
@@ -373,10 +379,13 @@ Rules:
 
 ```
 DATABASE_URL=postgresql://dochuki:dochuki@localhost:5442/dochuki
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 RECEIPT_STORAGE_DIR=./data/receipts
 FX_API_BASE=https://api.frankfurter.dev
 ```
+
+> `ANTHROPIC_API_KEY` 已於 2026-08-25 隨收據解析改用 Gemini（見 §5.3）換成
+> `GEMINI_API_KEY`，本表原文一併修正，不再保留舊名。
 
 > **本機實作差異**（2026-08-24 P0/P1 落地時修正，權威值見專案內 `.env.example`）
 > - **連接埠 5442**（原訂 5432）：開發機的 5432 已被既有的 PostgreSQL 18 Windows 服務

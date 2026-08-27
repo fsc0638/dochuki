@@ -6,13 +6,13 @@
 - 詳細規格：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)
 - 各階段開發提示詞：[docs/PROMPTS.md](docs/PROMPTS.md)
 
-目前進度：**P1 完成**（資料模型、分攤引擎、新潟迴歸測試全綠）。下一步 P2 記帳 CRUD 與多幣別 UI。階段編號見 [docs/PROMPTS.md](docs/PROMPTS.md)。
+目前進度：**P5 完成**（PWA 可安裝、Docker 容器化部署）。下一步 P6 強化。階段編號見 [docs/PROMPTS.md](docs/PROMPTS.md)。
 
 ## 前置需求
 
 | 工具 | 版本 |
 |---|---|
-| Node.js | >= 20 |
+| Node.js | >= 22.13 |
 | pnpm | 11.x |
 | Docker | 需能執行 `docker compose`（起 PostgreSQL 16） |
 
@@ -31,8 +31,10 @@ cp .env.example .env
 > **連接埠note**：容器對外映射 **5442**（非 IMPLEMENTATION.md §10 記載的 5432）。開發機的 5432 已被既有的 PostgreSQL 18 Windows 服務（`postgresql-x64-18`）占用，兩者互不影響。
 
 ```bash
-docker compose up -d
+docker compose up -d db
 ```
+
+只起資料庫；`app` 服務是給下方「部署」章節的容器化跑法用的，本機開發用 `pnpm dev` 即可，不需要建置 app 的映像。
 
 ```bash
 pnpm prisma migrate dev
@@ -68,11 +70,57 @@ docker compose down
 docker compose down -v
 ```
 
+## 部署
+
+一鍵起全套（app + db）容器化跑法，適合單機自架（例如雲端 VM）。
+
+```bash
+cp .env.example .env   # 填入 GEMINI_API_KEY，其餘可留預設
+docker compose up -d --build
+```
+
+`app` 服務的 `DATABASE_URL` 是寫死在 `docker-compose.yml` 裡指向 compose 內部網路的
+`db:5432`（跟本機開發用的 `localhost:5442` 不是同一個，不需要也不應該去改 `.env`
+裡那份），`GEMINI_API_KEY`／`FX_API_BASE` 才是從 `.env` 讀進去的。
+
+首次啟動需手動套 migration（容器不會自動跑，避免每次重啟都嘗試 migrate）：
+
+```bash
+docker compose exec app prisma migrate deploy
+```
+
+（不是 `pnpm exec prisma migrate deploy`——runtime image 的 `PATH` 已經掛進
+`node_modules/.bin`，直接呼叫執行檔即可；`pnpm exec`／`pnpm run` 在這個容器裡會
+誤判 node_modules「沒裝好」而觸發整套重新 install，見 Dockerfile 內的說明。）
+
+開 `http://<主機位址>:${APP_PORT:-3000}`（預設 3000；本機這台開發機因為 3000 是
+Windows 保留的排除 port range 綁不了，`.env` 裡設了 `APP_PORT=3010`）。
+
+停掉／移除：
+
+```bash
+docker compose down        # 保留資料
+docker compose down -v     # 連同 DB 與收據儲存的 volume 一併清除
+```
+
+**PWA 安裝**：`manifest.json` + `public/sw.js` 只快取靜態殼層（JS/CSS bundle、
+icons），頁面與帳務資料一律不快取，帳務金額永遠讀最新的。Service Worker 只在
+正式環境（`NODE_ENV=production`）註冊，`pnpm dev` 不會註冊——用上面容器化部署起
+來的網址（不是 `pnpm dev`）搭配 Chrome DevTools 的 Application／Lighthouse 面板
+確認 manifest 與 Service Worker 皆正確註冊。手機瀏覽器要能跳出「加入主畫面」，
+需要透過 HTTPS 或至少同網段存取——這個服務本身沒有另外處理網域／SSL，請依部署
+環境自行加一層反向代理（nginx／Caddy／Cloudflare Tunnel 皆可）。
+
+**容器內 PDF 匯出**：Dockerfile 的 runtime 階段已內建 Chromium 與其系統依賴
+（`playwright install --with-deps chromium`），匯出 PDF 不需要額外設定。
+
 ## 目錄結構
 
 ```
 dochuki/
-├─ docker-compose.yml     # postgres:16
+├─ docker-compose.yml     # postgres:16 + app（一鍵起全套）
+├─ Dockerfile             # app 多階段建置（含 Playwright/Chromium）
+├─ public/                # manifest.json、icons、sw.js（PWA 殼層快取）
 ├─ prisma/                # schema、migration、seed（新潟迴歸 fixture）
 ├─ prisma.config.ts       # Prisma 7 設定（schema/migration/datasource 位置）
 ├─ fixtures/

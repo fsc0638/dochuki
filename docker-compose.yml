@@ -20,5 +20,33 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    build:
+      context: .
+    container_name: dochuki-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # 容器對容器走 compose 內部網路的 service name，不是本機開發用的
+      # localhost:5442（那是給「本機瀏覽器 ↔ 容器化 DB」用的對外映射）
+      DATABASE_URL: postgresql://dochuki:dochuki@db:5432/dochuki
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # 沒有預設值——依 README「部署」章節的流程，.env 一定已經從
+      # .env.example 複製過來、本來就帶著這個值，不必在這裡重複一份字面量
+      # （跟 src/lib/fx/frankfurter.ts 的 FX_API_BASE_DEFAULT、.env.example
+      # 三處各存一份，改一處忘兩處）
+      FX_API_BASE: ${FX_API_BASE}
+      RECEIPT_STORAGE_DIR: /data/receipts
+    ports:
+      # 對外 port 可覆寫：本機這台開發機的 3000 是 Windows 保留的排除
+      # port range，綁不了，因此在 .env 設 APP_PORT=3010；一般環境
+      # （雲端 VM 等）沒有這個問題，預設值就是標準的 3000。
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - dochuki-receipts:/data/receipts
+
 volumes:
   dochuki-pgdata:
+  dochuki-receipts:

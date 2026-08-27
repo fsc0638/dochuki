@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+coverage
+data
+.env
+.env.*
+!.env.example
+.git
+.claude
+docs
+*.md
+*.tsbuildinfo
+next-env.d.ts
+src/generated/prisma
