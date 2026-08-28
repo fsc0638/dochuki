@@ -1,6 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { z } from "zod";
-import { RECEIPT_PARSE_PROMPT } from "@/lib/parse/prompt";
+import { RECEIPT_PARSE_PROMPT, RECEIPT_PARSE_PROMPT_FROM_TEXT } from "@/lib/parse/prompt";
 import { ReceiptParseSchema, type ReceiptParseOutput } from "@/lib/schemas/receipt";
 
 /**
@@ -63,6 +63,11 @@ export interface ParseReceiptArgs {
   mediaType: "image/jpeg" | "image/png" | "image/webp";
 }
 
+export interface ParseReceiptFromTextArgs {
+  /** PaddleOCR sidecar 抽出的原始 OCR 文字（見 orchestrator.ts） */
+  ocrText: string;
+}
+
 /**
  * 收斂 `z.toJSONSchema()` 產出中，Gemini `responseJsonSchema` 查證後判定
  * 風險最高的關鍵字（見上方模組註解第 2 點）。只處理這裡實際會遇到的兩種
@@ -100,8 +105,8 @@ function isConstBranch(branch: unknown): branch is { type: string; const: unknow
 
 const RESPONSE_JSON_SCHEMA = sanitizeSchemaForGemini(z.toJSONSchema(ReceiptParseSchema));
 
-async function attemptParse(
-  args: ParseReceiptArgs,
+async function attemptParseWithContents(
+  contents: Array<{ inlineData: { data: string; mimeType: string } } | { text: string }>,
 ): Promise<ReceiptParseOutput | null> {
   let response;
   try {
@@ -112,10 +117,7 @@ async function attemptParse(
     const client = getClient();
     response = await client.models.generateContent({
       model: MODEL,
-      contents: [
-        { inlineData: { data: args.imageBase64, mimeType: args.mediaType } },
-        { text: RECEIPT_PARSE_PROMPT },
-      ],
+      contents,
       config: {
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         responseMimeType: "application/json",
@@ -158,7 +160,25 @@ async function attemptParse(
 export async function parseReceipt(
   args: ParseReceiptArgs,
 ): Promise<ReceiptParseOutput | null> {
-  const first = await attemptParse(args);
+  const contents = [
+    { inlineData: { data: args.imageBase64, mimeType: args.mediaType } },
+    { text: RECEIPT_PARSE_PROMPT },
+  ];
+  const first = await attemptParseWithContents(contents);
   if (first !== null) return first;
-  return attemptParse(args);
+  return attemptParseWithContents(contents);
+}
+
+/**
+ * 解析 PaddleOCR sidecar 抽出的收據文字（無圖片）——見
+ * `orchestrator.ts` 的「OCR 品質夠好時改送文字省 token」路徑。重試邏輯與
+ * `parseReceipt` 相同。
+ */
+export async function parseReceiptFromText(
+  args: ParseReceiptFromTextArgs,
+): Promise<ReceiptParseOutput | null> {
+  const contents = [{ text: `${RECEIPT_PARSE_PROMPT_FROM_TEXT}\n\nOCR text:\n${args.ocrText}` }];
+  const first = await attemptParseWithContents(contents);
+  if (first !== null) return first;
+  return attemptParseWithContents(contents);
 }

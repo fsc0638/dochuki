@@ -1,0 +1,6 @@
+# 本機開發／測試用，不進 Dockerfile 的 production image（見 Dockerfile
+# 只裝 requirements.txt——對抗式審查抓到原本 pytest/httpx 混在一起，兩者
+# 連同 httpx 自己的依賴樹都被烤進正式環境跑的容器，純屬死重量）
+-r requirements.txt
+pytest
+httpx

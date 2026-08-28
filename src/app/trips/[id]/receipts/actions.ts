@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { type ActionState, toErrorMessage } from "@/lib/actionState";
 import { prisma } from "@/lib/db";
-import { parseReceipt } from "@/lib/parse/gemini";
+import { orchestrateParseReceipt } from "@/lib/parse/orchestrator";
 import { mediaTypeForPath, persistParseResult, receiptStorageDir } from "@/lib/receipts/write";
 
 /**
@@ -38,11 +38,11 @@ export async function reparseReceiptAction(
     return { error: "找不到原始圖檔，無法重新解析" };
   }
 
-  const parsed = await parseReceipt({
-    imageBase64: buffer.toString("base64"),
+  const { parsed, engine } = await orchestrateParseReceipt({
+    imageBuffer: buffer,
     mediaType: mediaTypeForPath(imagePath),
   });
-  await persistParseResult(receiptId, parsed);
+  await persistParseResult(receiptId, parsed, engine);
 
   revalidatePath(`/trips/${tripId}/expenses/new`);
   redirect(`/trips/${tripId}/expenses/new?receiptId=${receiptId}`);

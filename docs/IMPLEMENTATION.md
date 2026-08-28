@@ -328,6 +328,42 @@ Rules:
 >    結論是四者皆缺「日文收據」專項驗證數據，這個缺口跟選哪家 API 無關，只能靠使用者實測 5–10 張真實
 >    收據補上——換供應商本身不是為了解決已知的辨識準確度問題，是使用者的產品選擇。
 
+> **2026-08-28 P6：PaddleOCR sidecar 路由層**（使用者裁示直接做完整架構，見 CLAUDE.md 進度日誌；
+> 上面 Gemini 呼叫方式不變，這裡加的是「要不要呼叫它」這一層決策，Gemini 仍是唯一會做翻譯／品項分類
+> 的引擎）
+> 1. **架構**：`src/app/api/parse/route.ts` 改呼叫新的 `src/lib/parse/orchestrator.ts`
+>    的 `orchestrateParseReceipt()`，取代原本直接呼叫 `parseReceipt()`。這支函式先打
+>    `src/lib/parse/sidecar.ts` 的 `extractViaSidecar()`（HTTP 呼叫 `services/ocr-sidecar/`——
+>    FastAPI + RapidOCR 的 Python 服務，`prisma/schema.prisma` 的 `ParseEngine` enum 早就預留了
+>    `PADDLE_OCR` 這個值），拿到規則引擎抽出的欄位與信心分數。
+> 2. **PaddleOCR 只做得到 OCR，做不到翻譯／分類**：這是死結不是實作疏漏。因此「完全跳過 Gemini」
+>    只對規則引擎判斷為 `single_charge`（計程車/停車/自動販賣機/單一票券——整張收據本質上只有一個
+>    金額）且 `total`／`currency` 信心分數達門檻的收據開放，本機直接組出 `ReceiptParseOutput`
+>    （`items[0].name_zh`／`category` 固定為 `null`、`confidence.items` 固定為 `0`，交給既有確認頁
+>    的標紅機制處理，不是新的 UX）。多品項收據一律照跑 Gemini——翻譯是核心產品功能，不能為了省錢
+>    犧牲。門檻常數（`SINGLE_CHARGE_CLASSIFICATION_MIN` 等，見 `orchestrator.ts`）是推估值，不是拿
+>    真實收據校準出來的數字。
+> 3. **次要效益**：判定要呼叫 Gemini 時，若 sidecar 回傳的 OCR 文字品質夠好（`ocr_confidence_mean`
+>    與文字長度都達門檻），改呼叫新增的 `parseReceiptFromText()`（文字輸入，省輸入 token，效益約
+>    2–3 成，不是數量級）；否則跟加這層之前一樣送原圖給 `parseReceipt()`。
+> 4. **零 opt-in 成本**：`OCR_SIDECAR_URL` 未設定時 `extractViaSidecar()` 直接回 `null`，連 fetch
+>    都不打，`orchestrateParseReceipt()` 的行為退化成跟這層出現之前完全一樣。sidecar 逾時／連線失敗
+>    /回應格式不符 schema，同樣一律降級到 Gemini，不會讓拍照流程失敗。
+> 5. **`Receipt.engine` 從硬編碼變動態**：`route.ts` 建立 Receipt 記錄時仍先寫入 `LLM_VISION` 佔位值
+>    （這個時間窗本來就存在，中間沒有任何地方會讀到這筆記錄），解析完成後 `persistParseResult()`
+>    （簽名新增 `engine` 參數）用 orchestrator 實際採用的引擎覆寫，`reparseReceiptAction`（確認頁
+>    「重新解析」按鈕）同步改走 orchestrator。
+> 6. **未解決的缺口沒有變小**：專案至今零真實日文收據影像驗證（`fixtures/receipts/` 0 筆），這次疊加
+>    規則引擎後，規則引擎本身的真實準確率與 skip-Gemini 的實際攔截率，一樣要等使用者實拍真實收據才
+>    量得出來——多一層不代表門檻降低。
+> 7. **落地後對抗式審查（5 角度平行 agent＋逐一驗證＋sweep，共 18 個 CONFIRMED/PLAUSIBLE 發現）全數
+>    修復**，詳細清單見 CLAUDE.md 進度日誌對應日期條目。其中最嚴重一個：`classify.py` 原本用來數
+>    「這張收據有幾個金額」的正則沒有排除日期樣式——收據幾乎必印日期（「2026年08月24日 12:34」本身
+>    含 5 組數字），等於讓 `single_charge` 分類（唯一能跳過 Gemini 的分類）對幾乎所有真實收據都不可
+>    達，整個 P6 sidecar 的存在意義形同虛設。這個問題**手動瀏覽器實測完全沒抓到**——因為我測試用的
+>    合成收據圖恰好沒有加日期行；改用審查抓到的規則引擎才發現。這是本次落地過程中最重要的教訓：手動
+>    端到端測試「跑得動」不等於「邏輯對」，對抗式審查在這裡抓到了單靠人工測試會漏掉的系統性錯誤。
+
 ### 5.4 準確率評估
 
 `fixtures/receipts/` 每張圖配一份人工標註 JSON。`RUN_PARSE_EVAL=1 pnpm test parse.eval` 計算關鍵欄位（total/datetime/currency/tax_rate）錯誤率與品項召回率；P3 驗收線：30 張實體收據關鍵欄位人工修正率 < 20%。
@@ -382,10 +418,17 @@ DATABASE_URL=postgresql://dochuki:dochuki@localhost:5442/dochuki
 GEMINI_API_KEY=...
 RECEIPT_STORAGE_DIR=./data/receipts
 FX_API_BASE=https://api.frankfurter.dev
+OCR_SIDECAR_URL=（選填，見下方 2026-08-28 說明）
 ```
 
 > `ANTHROPIC_API_KEY` 已於 2026-08-25 隨收據解析改用 Gemini（見 §5.3）換成
 > `GEMINI_API_KEY`，本表原文一併修正，不再保留舊名。
+
+> **2026-08-28 新增 `OCR_SIDECAR_URL`**（選填，見 §5.3 對應日期的 blockquote）：容器化部署
+> （`docker compose up -d --build`）不需要在 `.env` 填這行，`docker-compose.yml` 的 `app` 服務
+> 直接寫死內部網路位址 `http://ocr-sidecar:8000`。這裡留空／整行刪掉時，行為與這個變數出現之前
+> 完全一致（一律呼叫 Gemini）；只有想在本機 `pnpm dev` 獨立測試 sidecar 時才需要手動填，見
+> `services/ocr-sidecar/README.md`。
 
 > **本機實作差異**（2026-08-24 P0/P1 落地時修正，權威值見專案內 `.env.example`）
 > - **連接埠 5442**（原訂 5432）：開發機的 5432 已被既有的 PostgreSQL 18 Windows 服務

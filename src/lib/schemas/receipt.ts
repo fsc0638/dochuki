@@ -33,7 +33,10 @@ export type ReceiptLineItemParseOutput = z.infer<typeof ReceiptLineItemParse>;
 
 export const ReceiptTaxParse = z.object({
   rate: z.number(),
-  amount: z.number(),
+  // 內稅/外稅只憑關鍵字判斷、沒有配對到金額時，金額必須誠實留 null——
+  // 不得為了湊出一個數字而捏造（見 CLAUDE.md「never invent」同一條鐵律，
+  // PaddleOCR sidecar 的 tax.py 就有這種「只有 mode 沒有 amount」的合法輸出）
+  amount: z.number().nullable(),
   mode: z.enum(["內稅(税込)", "外稅(税抜)"]).nullable(),
 });
 

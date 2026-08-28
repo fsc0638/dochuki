@@ -20,6 +20,21 @@ services:
       timeout: 5s
       retries: 10
 
+  ocr-sidecar:
+    build:
+      context: ./services/ocr-sidecar
+    container_name: dochuki-ocr-sidecar
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # ONNX 模型權重雖已在建置期烤進映像，仍需要幾秒鐘載入進記憶體
+      start_period: 20s
+    # 刻意不對外開 port——只服務 compose 內部網路的 app，見 README「部署」
+    # 章節；本機獨立測試 sidecar 的方式寫在 services/ocr-sidecar/README.md
+
   app:
     build:
       context: .
@@ -28,6 +43,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # 特意用 service_started 而非 service_healthy——sidecar 是可選的
+      # 加速路徑，app 完全能在它不存在或掛掉時正常運作（見
+      # src/lib/parse/sidecar.ts 的降級邏輯）。若這裡也用 service_healthy，
+      # sidecar 的 ONNX 模型載入失敗或過慢會讓 compose 直接拒絕啟動 app，
+      # 等於讓一個「壞掉的加速器」拖垮整個服務——跟「絕不能因為 sidecar
+      # 而中斷主流程」的設計目標矛盾（對抗式審查抓到的問題）。這裡只保留
+      # 「等 sidecar 容器行程起來再啟動 app」的順序，不等它真的通過健康檢查
+      ocr-sidecar:
+        condition: service_started
     environment:
       # 容器對容器走 compose 內部網路的 service name，不是本機開發用的
       # localhost:5442（那是給「本機瀏覽器 ↔ 容器化 DB」用的對外映射）
@@ -39,6 +63,7 @@ services:
       # 三處各存一份，改一處忘兩處）
       FX_API_BASE: ${FX_API_BASE}
       RECEIPT_STORAGE_DIR: /data/receipts
+      OCR_SIDECAR_URL: http://ocr-sidecar:8000
     ports:
       # 對外 port 可覆寫：本機這台開發機的 3000 是 Windows 保留的排除
       # port range，綁不了，因此在 .env 設 APP_PORT=3010；一般環境

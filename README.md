@@ -6,7 +6,7 @@
 - 詳細規格：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)
 - 各階段開發提示詞：[docs/PROMPTS.md](docs/PROMPTS.md)
 
-目前進度：**P5 完成**（PWA 可安裝、Docker 容器化部署）。下一步 P6 強化。階段編號見 [docs/PROMPTS.md](docs/PROMPTS.md)。
+目前進度：**P0–P6 全數完成**（PWA 可安裝、Docker 容器化部署、清償計畫、離線佇列、PaddleOCR sidecar）。階段編號見 [docs/PROMPTS.md](docs/PROMPTS.md)。
 
 ## 前置需求
 
@@ -83,6 +83,12 @@ docker compose up -d --build
 `db:5432`（跟本機開發用的 `localhost:5442` 不是同一個，不需要也不應該去改 `.env`
 裡那份），`GEMINI_API_KEY`／`FX_API_BASE` 才是從 `.env` 讀進去的。
 
+`ocr-sidecar`（P6 新增，PaddleOCR 收據 OCR）隨這條指令自動一起建置啟動，不需要
+另外的手動步驟；`app` 連它的位址（`OCR_SIDECAR_URL=http://ocr-sidecar:8000`）同樣
+寫死在 `docker-compose.yml`，不吃 `.env`。它不對外開 port，僅供 `app` 內部呼叫；
+sidecar 若掛掉或還沒 ready，收據解析會自動降級成原本的 Gemini 全圖辨識路徑，不影響
+既有功能。
+
 首次啟動需手動套 migration（容器不會自動跑，避免每次重啟都嘗試 migrate）：
 
 ```bash
@@ -118,8 +124,10 @@ icons），頁面與帳務資料一律不快取，帳務金額永遠讀最新的
 
 ```
 dochuki/
-├─ docker-compose.yml     # postgres:16 + app（一鍵起全套）
+├─ docker-compose.yml     # postgres:16 + app + ocr-sidecar（一鍵起全套）
 ├─ Dockerfile             # app 多階段建置（含 Playwright/Chromium）
+├─ services/
+│  └─ ocr-sidecar/        # PaddleOCR 收據 OCR sidecar（P6，FastAPI + RapidOCR）
 ├─ public/                # manifest.json、icons、sw.js（PWA 殼層快取）
 ├─ prisma/                # schema、migration、seed（新潟迴歸 fixture）
 ├─ prisma.config.ts       # Prisma 7 設定（schema/migration/datasource 位置）
