@@ -116,13 +116,12 @@ model Group {
 }
 
 model Member {
-  id       String  @id @default(cuid())
-  tripId   String
-  trip     Trip    @relation(fields: [tripId], references: [id])
-  groupId  String?
-  group    Group?  @relation(fields: [groupId], references: [id])
-  name     String
-  weight   Decimal @default(1) @db.Decimal(8, 4)
+  id          String         @id @default(cuid())
+  tripId      String
+  trip        Trip           @relation(fields: [tripId], references: [id])
+  groupId     String?
+  group       Group?         @relation(fields: [groupId], references: [id])
+  name        String
   shares      ExpenseShare[]
   paid        Expense[]      @relation("payer")
   fundEntries FundEntry[]
@@ -218,7 +217,12 @@ model FxRate {
 ```
 
 **分攤引擎規則（`src/lib/money/split.ts`）**：
-EQUAL＝amountHome ÷ 參與人數；WEIGHT＝按 member.weight 比例；EXACT＝直接指定各人金額（總和必須等於 amountHome，否則拒絕）；BY_GROUP＝金額先屬於某 Group，組內均分（機票情境）。所有模式輸出以 **6 位小數**落地，除不盡的餘數加到付款人的 share，保證 Σshares ≡ amountHome（嚴格相等，回傳前實際驗證）。
+EQUAL＝amountHome ÷ 參與人數；WEIGHT＝按逐人指定的權重比例（見下方 2026-09 blockquote）；EXACT＝直接指定各人金額（總和必須等於 amountHome，否則拒絕）；BY_GROUP＝金額先屬於某 Group，組內均分（機票情境）。所有模式輸出以 **6 位小數**落地，除不盡的餘數加到付款人的 share，保證 Σshares ≡ amountHome（嚴格相等，回傳前實際驗證）。
+
+> **2026-09 WEIGHT 權重改為逐筆支出指定，不再是成員固定屬性**（使用者裁示，見 CLAUDE.md 進度日誌）
+> 原設計 `Member.weight` 是成員的固定欄位，同一人在行程內所有 WEIGHT 模式支出都套用同一個權重。使用者指出這不合理——「權重分攤應該在每筆消費需要做分攤時再決定」，同一人在不同支出裡該占多少比例本來就可能不同。
+> `split.ts` 的 `SplitParticipant.weight` 本來就是逐次呼叫傳入的參數（不是從成員資料表查來的），因此**分攤引擎本身完全不用改**；改動的只是「這個 weight 從哪裡來」——從 `Member.weight` 欄位改成 `ExpenseFormInput.weights`（`Array<{memberId, weight}>`，跟 EXACT 模式的 `exactShares` 同一層級、同一種形狀）。schema 移除 `Member.weight` 欄位（migration `20260901120000_remove_member_weight`）。
+> 編輯既有 WEIGHT 支出時：權重本身不落地，只有分攤結果 `ExpenseShare.shareHome` 落地——但 `weight_i / weight_j = share_i / share_j`，編輯頁用既有 `shareHome` 反推、預填權重輸入框，未改動直接重送會重現一模一樣的分攤比例（跟 EXACT 模式用同一份 shares 資料反推指定金額的邏輯相同）。
 
 > **為何是 6 位而非原訂的 2 位**（2026-08-24 P1 裁示）
 > 本文件原文寫「以 2 位小數落地」，但該值與 CLAUDE.md 迴歸案例互相矛盾：
@@ -237,7 +241,7 @@ EQUAL＝amountHome ÷ 參與人數；WEIGHT＝按 member.weight 比例；EXACT�
 |---|---|---|---|
 | 金額 | `amountOriginal` / `amountHome` / `shareHome` / `FundEntry.amount` / `LineItem.unitPrice` / `LineItem.amount` | `Decimal(18,6)` | `toDbAmount()` |
 | 匯率 | `Expense.rateUsed` / `FxRate.rate` | `Decimal(18,8)` | `toDbRate()` |
-| 係數 | `Member.weight` / `LineItem.qty` / `LineItem.taxRate` | `Decimal(8,4)` / `(12,4)` / `(6,4)` | `toDbFactor()` |
+| 係數 | `LineItem.qty` / `LineItem.taxRate` | `Decimal(12,4)` / `(6,4)` | `toDbFactor()` |
 
 ## 5. 收據解析（核心功能）
 

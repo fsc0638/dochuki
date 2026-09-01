@@ -3,6 +3,7 @@ import {
   zCuid,
   zCurrencyCode,
   zMoneyString,
+  zNonNegativeMoneyString,
   zPositiveMoneyString,
 } from "./common";
 
@@ -30,6 +31,17 @@ const ExactShareRowSchema = z.object({
   amount: zMoneyString,
 });
 
+/**
+ * WEIGHT 分攤模式的權重是「這一筆支出當下決定」，不是成員的固定屬性
+ * （2026-09 使用者裁示改版：見 CLAUDE.md 進度日誌——同一人在不同支出裡
+ * 該占多少比例本來就可能不同，不該綁在成員身上整趟旅程套用同一個值）。
+ * 未指定的參與者由 split.ts 預設為權重 1。
+ */
+const WeightRowSchema = z.object({
+  memberId: zCuid,
+  weight: zNonNegativeMoneyString,
+});
+
 const BaseExpenseFieldsSchema = z.object({
   tripId: zCuid,
   description: z.string().trim().min(1, "請輸入項目說明").max(200),
@@ -45,10 +57,12 @@ const BaseExpenseFieldsSchema = z.object({
 
 /**
  * 依 splitMode 判別聯集：
- *   EQUAL / WEIGHT  → participantIds（至少 1 人，未指定則預設全員）
- *   BY_GROUP        → groupId（該組成員自動作為參與者，見 split.ts）
- *   EXACT           → exactShares（總和須等於換算後的 amountHome，於寫入層核對，
- *                      因為 amountHome 是換算後才知道的值，zod 這層看不到）
+ *   EQUAL    → participantIds（至少 1 人，未指定則預設全員）
+ *   WEIGHT   → participantIds ＋ weights（逐人權重，這一筆支出當下決定；
+ *              未指定的參與者由 split.ts 預設權重 1）
+ *   BY_GROUP → groupId（該組成員自動作為參與者，見 split.ts）
+ *   EXACT    → exactShares（總和須等於換算後的 amountHome，於寫入層核對，
+ *              因為 amountHome 是換算後才知道的值，zod 這層看不到）
  */
 /**
  * 從 <form> 的 FormData 組出 ExpenseFormSchema 能解析的形狀。
@@ -79,12 +93,25 @@ export function parseExpenseFormData(
   const splitMode = formData.get("splitMode");
   switch (splitMode) {
     case "EQUAL":
-    case "WEIGHT":
       return {
         ...base,
         splitMode,
         participantIds: formData.getAll("participantIds"),
       };
+    case "WEIGHT": {
+      const participantIds = formData.getAll("participantIds");
+      const weights = participantIds
+        .filter((id): id is string => typeof id === "string")
+        .map((memberId) => ({
+          memberId,
+          weight: formData.get(`weight.${memberId}`),
+        }))
+        .filter(
+          (row): row is { memberId: string; weight: string } =>
+            typeof row.weight === "string" && row.weight.trim() !== "",
+        );
+      return { ...base, splitMode, participantIds, weights };
+    }
     case "BY_GROUP":
       return { ...base, splitMode, groupId: formData.get("groupId") };
     case "EXACT": {
@@ -112,6 +139,7 @@ export const ExpenseFormSchema = z.discriminatedUnion("splitMode", [
   BaseExpenseFieldsSchema.extend({
     splitMode: z.literal(SplitModeEnum.enum.WEIGHT),
     participantIds: z.array(zCuid).min(1, "至少選擇一位參與者"),
+    weights: z.array(WeightRowSchema).default([]),
   }),
   BaseExpenseFieldsSchema.extend({
     splitMode: z.literal(SplitModeEnum.enum.BY_GROUP),

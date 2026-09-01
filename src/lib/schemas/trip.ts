@@ -1,10 +1,5 @@
 import { z } from "zod";
-import {
-  zCuid,
-  zCurrencyCode,
-  zNonNegativeMoneyString,
-  zPositiveMoneyString,
-} from "./common";
+import { zCuid, zCurrencyCode, zPositiveMoneyString } from "./common";
 
 /**
  * 行程／成員／組別的表單輸入 schema。
@@ -65,8 +60,6 @@ export const MemberFormSchema = z.object({
   tripId: zCuid,
   name: z.string().trim().min(1, "請輸入成員姓名").max(50),
   groupId: z.string().trim().min(1).nullable().default(null),
-  // WEIGHT 分攤模式使用；未填時 Prisma 端預設為 1
-  weight: zNonNegativeMoneyString.optional(),
 });
 export type MemberFormInput = z.infer<typeof MemberFormSchema>;
 
@@ -104,11 +97,9 @@ export function parseGroupFormData(formData: FormData): unknown {
 
 export function parseMemberFormData(formData: FormData): unknown {
   const groupId = formData.get("groupId");
-  const weight = formData.get("weight");
   return {
     tripId: formData.get("tripId"),
     name: formData.get("name"),
     groupId: typeof groupId === "string" && groupId !== "" ? groupId : null,
-    weight: typeof weight === "string" && weight !== "" ? weight : undefined,
   };
 }

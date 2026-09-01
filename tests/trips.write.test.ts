@@ -68,8 +68,8 @@ describe("trips/write · trips/load", () => {
     const group = await createGroup({ tripId, name: "測試組" });
     groupId = group.id;
 
-    m1 = (await createMember({ tripId, name: "甲", groupId, weight: "1" })).id;
-    m2 = (await createMember({ tripId, name: "乙", groupId, weight: "2" })).id;
+    m1 = (await createMember({ tripId, name: "甲", groupId })).id;
+    m2 = (await createMember({ tripId, name: "乙", groupId })).id;
     m3 = (await createMember({ tripId, name: "丙", groupId: null })).id;
   });
 
@@ -90,11 +90,6 @@ describe("trips/write · trips/load", () => {
   });
 
   describe("createMember / updateMember / deleteMember", () => {
-    it("weight 以 4 位小數落地", async () => {
-      const member = await prisma.member.findUniqueOrThrow({ where: { id: m2 } });
-      expect(fromDb(member.weight).toString()).toBe("2");
-    });
-
     it("刪除沒有分攤紀錄的成員：成功", async () => {
       const temp = await createMember({ tripId, name: "暫時成員", groupId: null });
       await deleteMember(temp.id);
@@ -102,18 +97,16 @@ describe("trips/write · trips/load", () => {
       expect(found).toBeNull();
     });
 
-    it("updateMember：改名與改權重都會落地，且權重收斂到 4 位小數", async () => {
-      const temp = await createMember({ tripId, name: "改名前", groupId: null, weight: "1" });
+    it("updateMember：改名與改組別都會落地", async () => {
+      const temp = await createMember({ tripId, name: "改名前", groupId: null });
       await updateMember(temp.id, {
         tripId,
         name: "改名後",
         groupId,
-        weight: "1.23455",
       });
       const updated = await prisma.member.findUniqueOrThrow({ where: { id: temp.id } });
       expect(updated.name).toBe("改名後");
       expect(updated.groupId).toBe(groupId);
-      expect(fromDb(updated.weight).toString()).toBe("1.2346"); // 5 位 → HALF_UP 收斂到 4 位
       await deleteMember(temp.id);
     });
   });
@@ -147,7 +140,7 @@ describe("trips/write · trips/load", () => {
       expect(shares).toHaveLength(3);
     });
 
-    it("updateExpense：EQUAL → WEIGHT，舊 shares 被整批替換（不殘留 3 筆變 2 筆）", async () => {
+    it("updateExpense：EQUAL → WEIGHT，舊 shares 被整批替換（不殘留 3 筆變 2 筆），權重是這一筆當下指定的", async () => {
       await updateExpense(expenseId, {
         tripId,
         description: "午餐（改權重分攤）",
@@ -159,6 +152,11 @@ describe("trips/write · trips/load", () => {
         fundSpend: false,
         splitMode: "WEIGHT",
         participantIds: [m1, m2], // 丙不再參與
+        // 權重不是成員的固定屬性，是這筆支出當下指定的（2026-09 改版）
+        weights: [
+          { memberId: m1, weight: "1" },
+          { memberId: m2, weight: "2" },
+        ],
       });
 
       const shares = await prisma.expenseShare.findMany({ where: { expenseId } });

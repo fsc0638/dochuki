@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MemberManager } from "@/components/trip/MemberManager";
-import { fromDb } from "@/lib/money/fromDb";
 import { loadTrip } from "@/lib/trips/load";
 
 export default async function TripMembersPage({
@@ -28,7 +27,6 @@ export default async function TripMembersPage({
           id: member.id,
           name: member.name,
           groupId: member.groupId,
-          weight: fromDb(member.weight).toString(),
         }))}
       />
     </main>

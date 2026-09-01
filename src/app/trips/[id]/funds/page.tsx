@@ -17,9 +17,9 @@ export default async function FundPage({
   const [trip, fund] = await Promise.all([loadTrip(id), loadFund(id)]);
   if (trip === null) notFound();
 
-  // Client Component 只能收純物件——trip.members 裡的 Decimal（weight）與
-  // 巢狀 group 關聯物件都不是，傳過去會被 React 擋下（同一套規則 expenses
-  // 頁面已經在遵守，見 expenses/new/page.tsx 的 members 轉換）
+  // Client Component 只能收純物件——trip.members 的巢狀 group 關聯物件
+  // 不是，傳過去會被 React 擋下（同一套規則 expenses 頁面已經在遵守，
+  // 見 expenses/new/page.tsx 的 members 轉換）
   const members = trip.members.map((member) => ({ id: member.id, name: member.name }));
 
   return (

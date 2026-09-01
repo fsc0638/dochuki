@@ -15,8 +15,6 @@ import { splitExpense, type SplitMode, type SplitShare } from "./split";
 export interface SummaryMember {
   memberId: string;
   groupId?: string | null;
-  /** WEIGHT 模式使用 */
-  weight?: MoneyInput;
 }
 
 export interface SummaryExpense {
@@ -29,6 +27,13 @@ export interface SummaryExpense {
   groupId?: string | null;
   /** EXACT 模式使用：memberId → 指定金額 */
   exactShares?: Record<string, MoneyInput>;
+  /**
+   * WEIGHT 模式使用：memberId → 這一筆支出的權重。權重是這一筆支出當下
+   * 決定的，不是成員的固定屬性（2026-09 改版，見 CLAUDE.md 進度日誌）——
+   * 跟 exactShares 同一層級，都是「per-expense」而非「per-member」。
+   * 未指定的參與者由 split.ts 預設權重 1。
+   */
+  weights?: Record<string, MoneyInput>;
   /** true = 由公費支付，不進個人分攤（schema Expense.fundSpend） */
   fundSpend?: boolean;
 }
@@ -86,7 +91,7 @@ export function summarizeTrip(args: {
     const participants = members.map((member) => ({
       memberId: member.memberId,
       groupId: member.groupId ?? null,
-      weight: member.weight,
+      weight: expense.weights?.[member.memberId],
       exactShare: expense.exactShares?.[member.memberId],
     }));
 

@@ -20,8 +20,6 @@ export interface ExpenseFormMember {
   id: string;
   name: string;
   groupId: string | null;
-  /** 已經是正規化過的字串（見 fromDb），client 端可直接用 */
-  weight: string;
 }
 
 export interface ExpenseFormGroup {
@@ -48,6 +46,8 @@ export interface ExpenseFormInitial {
   splitMode: SplitModeInput;
   participantIds?: string[];
   groupId?: string;
+  /** WEIGHT 模式：memberId → 這一筆支出的權重（見 ExpenseForm 說明） */
+  weights?: Record<string, string>;
   exactShares?: Record<string, string>;
   fundSpend?: boolean;
 }
@@ -109,6 +109,7 @@ export function ExpenseForm({
     () => new Set(initial?.participantIds ?? members.map((m) => m.id)),
   );
   const [groupId, setGroupId] = useState(initial?.groupId ?? groups[0]?.id ?? "");
+  const [weights, setWeights] = useState<Record<string, string>>(initial?.weights ?? {});
   const [exactShares, setExactShares] = useState<Record<string, string>>(
     initial?.exactShares ?? {},
   );
@@ -156,7 +157,7 @@ export function ExpenseForm({
     } else if (splitMode === "WEIGHT") {
       participants = [...participantIds].map((id) => ({
         memberId: id,
-        weight: memberById.get(id)?.weight,
+        weight: weights[id] ?? "1",
       }));
     } else if (splitMode === "BY_GROUP") {
       participants = members.map((m) => ({ memberId: m.id, groupId: m.groupId }));
@@ -212,6 +213,7 @@ export function ExpenseForm({
     splitMode,
     participantIds,
     groupId,
+    weights,
     exactShares,
     payerId,
     members,
@@ -384,27 +386,44 @@ export function ExpenseForm({
       {(splitMode === "EQUAL" || splitMode === "WEIGHT") && (
         <fieldset className="flex flex-col gap-1">
           <legend className="text-sm font-medium text-ink-soft">參與者</legend>
+          {splitMode === "WEIGHT" && (
+            <p className="text-xs text-ink-muted">
+              權重是這一筆支出當下決定的，預設 1（等權重）；改大代表這人在這筆要背更多份額。
+            </p>
+          )}
           {members.map((member) => (
-            <label key={member.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="participantIds"
-                value={member.id}
-                checked={participantIds.has(member.id)}
-                onChange={(event) => {
-                  setParticipantIds((prev) => {
-                    const next = new Set(prev);
-                    if (event.target.checked) next.add(member.id);
-                    else next.delete(member.id);
-                    return next;
-                  });
-                }}
-              />
-              {member.name}
-              {splitMode === "WEIGHT" && (
-                <span className="text-xs text-ink-muted">權重 {member.weight}</span>
+            <div key={member.id} className="flex items-center gap-2 text-sm">
+              <label className="flex flex-1 items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="participantIds"
+                  value={member.id}
+                  checked={participantIds.has(member.id)}
+                  onChange={(event) => {
+                    setParticipantIds((prev) => {
+                      const next = new Set(prev);
+                      if (event.target.checked) next.add(member.id);
+                      else next.delete(member.id);
+                      return next;
+                    });
+                  }}
+                />
+                {member.name}
+              </label>
+              {splitMode === "WEIGHT" && participantIds.has(member.id) && (
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name={`weight.${member.id}`}
+                  value={weights[member.id] ?? "1"}
+                  onChange={(event) =>
+                    setWeights((prev) => ({ ...prev, [member.id]: event.target.value }))
+                  }
+                  aria-label={`${member.name} 的權重`}
+                  className={`${inputClass} w-16`}
+                />
               )}
-            </label>
+            </div>
           ))}
         </fieldset>
       )}

@@ -24,7 +24,6 @@ interface MemberRow {
   id: string;
   name: string;
   groupId: string | null;
-  weight: string;
 }
 
 function CreateGroupForm({ tripId }: { tripId: string }) {
@@ -62,29 +61,17 @@ function CreateMemberForm({ tripId, groups }: { tripId: string; groups: GroupRow
       <Field label="姓名" htmlFor="member-name" errors={state.fieldErrors?.name}>
         <input id="member-name" name="name" type="text" required className={inputClass} />
       </Field>
-      <div className="flex gap-3">
-        <Field label="組別" htmlFor="member-group">
-          <Select
-            id="member-group"
-            name="groupId"
-            defaultValue=""
-            options={[
-              { value: "", label: "未分組" },
-              ...groups.map((group) => ({ value: group.id, label: group.name })),
-            ]}
-          />
-        </Field>
-        <Field label="權重（按權重分攤用）" htmlFor="member-weight" errors={state.fieldErrors?.weight}>
-          <input
-            id="member-weight"
-            name="weight"
-            type="text"
-            inputMode="decimal"
-            placeholder="1"
-            className={inputClass}
-          />
-        </Field>
-      </div>
+      <Field label="組別" htmlFor="member-group">
+        <Select
+          id="member-group"
+          name="groupId"
+          defaultValue=""
+          options={[
+            { value: "", label: "未分組" },
+            ...groups.map((group) => ({ value: group.id, label: group.name })),
+          ]}
+        />
+      </Field>
       <SubmitButton>新增成員</SubmitButton>
     </form>
   );
@@ -124,13 +111,6 @@ function MemberItem({
               { value: "", label: "未分組" },
               ...groups.map((group) => ({ value: group.id, label: group.name })),
             ]}
-          />
-          <input
-            name="weight"
-            type="text"
-            inputMode="decimal"
-            defaultValue={member.weight}
-            className={`${inputClass} w-16`}
           />
           <SubmitButton>更新</SubmitButton>
         </div>

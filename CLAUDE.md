@@ -91,6 +91,15 @@ seed fixture 與測試斷言依據，**任何金額邏輯改動後 `pnpm test re
 （完成一項就把勾打上，並在下方追加一行日期＋摘要）
 
 ### 進度日誌
+- 2026-09-01 **WEIGHT 分攤模式改版：權重從成員固定屬性改成逐筆支出指定**（使用者裁示：「權重分攤應該在每筆消費需要做分攤時再決定」，指出原設計把權重綁在成員身上、整趟旅程套用同一個值不合理——同一人在不同支出裡該占多少比例本來就可能不同）。`split.ts` 分攤引擎完全不用改（`SplitParticipant.weight` 本來就是逐次呼叫傳入的參數，不是從成員資料表查來的）；改動的只是「權重從哪裡來」：
+  - schema 移除 `Member.weight` 欄位（migration `20260901120000_remove_member_weight`，非互動環境用 `migrate diff --script` 產 SQL 後手動建 migration 資料夾＋`migrate deploy` 套用，繞過 `migrate dev` 需要互動確認刪欄位的限制）
+  - `src/lib/schemas/expense.ts` WEIGHT 模式新增 `weights: Array<{memberId, weight}>`，跟 EXACT 模式的 `exactShares` 同一層級、同一種形狀；`parseExpenseFormData` 比照 `exactShare.<memberId>` 的模式收集 `weight.<memberId>` 逐人欄位
+  - `src/lib/trips/write.ts` 的 `buildParticipants()` WEIGHT case 改讀 `input.weights`，不再查 `tripMembers` 的 weight 欄位；`createMember`／`updateMember` 移除 weight 寫入
+  - `src/lib/money/summary.ts` 的 `weight` 從 `SummaryMember` 移到 `SummaryExpense.weights`（regression 測試從未在 WEIGHT 模式下用過非預設權重，零額外改動即通過）
+  - `ExpenseForm.tsx` 參與者清單在 WEIGHT 模式下，把原本唯讀的「權重 {member.weight}」文字換成逐人可編輯輸入框（預設 1），新增 `weights` state 同步餵給即時預覽與送出欄位
+  - `MemberManager.tsx` 移除成員列表與新增表單的權重欄位——這正是使用者在調整期間發現「這格是什麼」才追問出的欄位，問完後直接裁示整個拿掉
+  - **編輯既有 WEIGHT 支出時的權重從哪來**：權重本身不落地，只有分攤結果 `ExpenseShare.shareHome` 落地，但 `weight_i / weight_j = share_i / share_j` 恆成立——編輯頁用既有 `shareHome` 反推預填權重輸入框（跟 EXACT 模式用同一份 shares 反推指定金額的邏輯相同），未改動直接重送會重現一模一樣的分攤比例
+  驗證：`pnpm lint`／`typecheck`／`build` 全過，`pnpm test` 209/210（原 210/211，刪除一條測「member.weight 落地」的過時測試，`trips.write.test.ts` 的 WEIGHT 分攤測試改用逐筆 `weights` 參數重寫，斷言不變：1:2 權重仍分出 250/500）、`pnpm test regression` 17/17 不變。瀏覽器對容器化服務完整實測：成員管理頁權重欄位確認消失；新增支出頁切到「按權重」後每位參與者旁出現預設 1 的可編輯權重框，即時預覽正確反映權重比例（10 人中 1 人權重改 2、金額 1000 → 該人 182、其餘各 91）；**完整送出＋回編輯頁驗證反推邏輯**：送出後編輯頁權重框正確顯示 181.8／90.90（原始 shareHome，非顯示捨入值），比例精確對應 2:1，重新整理不改動直接看預覽數字仍是 182／91，證實「編輯不改權重＝重現原本比例」成立；測試資料已清理，不影響 regression。
 - 2026-08-28 **P6 完成（3/3 子項：+ PaddleOCR sidecar）**：使用者看過技術研究（PaddleOCR 無語意抽取能力、需自建規則層；成本效益主要來自「規則層直接攔截、整筆跳過 Gemini」而非「圖轉文字省 token」）後裁示**直接做完整架構**。新增 `services/ocr-sidecar/`（Python FastAPI + RapidOCR，regex 規則層抽 store/datetime/currency/total/tax 六個欄位＋信心分數＋`single_charge`/`itemized`/`unknown` 分類），TS 側新增 `src/lib/parse/sidecar.ts`（HTTP 呼叫端，跟 `gemini.ts` 同一套「永不拋出、失敗一律回 null」合約）與 `src/lib/parse/orchestrator.ts`（路由決策：`single_charge` 且 total/currency 信心達標→完全跳過 Gemini 本機組出結果；其餘→呼叫 Gemini，OCR 文字品質夠好時送文字省 token、否則送原圖）。`src/app/api/parse/route.ts`／`reparseReceiptAction`／`persistParseResult` 改走 orchestrator，`Receipt.engine` 從硬編碼 `LLM_VISION` 變成動態寫入（`ParseEngine` enum 早就預留 `PADDLE_OCR`）。`docker-compose.yml` 新增 `ocr-sidecar` 服務。
 
   **落地後跑對抗式審查（5 角度平行 agent＋逐一驗證＋sweep，18 個 CONFIRMED/PLAUSIBLE 發現，全數修復）**，抓到的問題遠比自己手動測試發現的多，最嚴重一個：`classify.py` 原本用來數「收據有幾個金額」的正則沒有排除日期樣式——「2026年08月24日 12:34」本身含 5 組數字，等於讓幾乎每張真實收據（幾乎必印日期）都被誤數成「itemized」，`single_charge`（唯一能跳過 Gemini 的分類）形同不可達，整個 sidecar 的存在意義被架空。**這個問題手動瀏覽器實測完全沒抓到**——因為我測試用的合成收據圖剛好沒加日期行；補上日期行重測才在真實容器裡重現、修完後再驗證一次通過。這是本輪最重要的教訓：端到端測試「跑得動」不等於「邏輯對」。

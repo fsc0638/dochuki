@@ -68,7 +68,6 @@ model Member {
   groupId     String?
   group       Group?         @relation(fields: [groupId], references: [id])
   name        String
-  weight      Decimal        @default(1) @db.Decimal(8, 4)
   shares      ExpenseShare[]
   paid        Expense[]      @relation("payer")
   fundEntries FundEntry[]

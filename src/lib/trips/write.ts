@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getDailyRate } from "@/lib/fx/frankfurter";
 import { Money } from "@/lib/money/decimal";
 import { convertToHome, resolveRate } from "@/lib/money/convert";
-import { fromDb, toDbAmount, toDbFactor, toDbRate } from "@/lib/money/fromDb";
+import { toDbAmount, toDbFactor, toDbRate } from "@/lib/money/fromDb";
 import { splitExpense, type SplitParticipant } from "@/lib/money/split";
 import type {
   GroupFormInput,
@@ -114,7 +114,6 @@ export async function createMember(
       tripId: input.tripId,
       name: input.name,
       groupId: input.groupId,
-      weight: input.weight !== undefined ? toDbFactor(input.weight) : undefined,
     },
   });
   return { id: member.id };
@@ -129,7 +128,6 @@ export async function updateMember(
     data: {
       name: input.name,
       groupId: input.groupId,
-      weight: input.weight !== undefined ? toDbFactor(input.weight) : undefined,
     },
   });
 }
@@ -280,20 +278,20 @@ function buildParticipants(
   tripMembers: Array<{
     id: string;
     groupId: string | null;
-    weight: { toString(): string };
   }>,
 ): SplitParticipant[] {
   switch (input.splitMode) {
     case "EQUAL":
       return input.participantIds.map((memberId) => ({ memberId }));
-    case "WEIGHT":
-      return input.participantIds.map((memberId) => {
-        const member = tripMembers.find((m) => m.id === memberId);
-        return {
-          memberId,
-          weight: member ? fromDb(member.weight) : undefined,
-        };
-      });
+    case "WEIGHT": {
+      // 權重是這一筆支出當下決定的（見 schemas/expense.ts 說明），不是查
+      // 成員的固定屬性；未指定的參與者不設 weight，split.ts 預設為 1
+      const weightByMember = new Map(input.weights.map((row) => [row.memberId, row.weight]));
+      return input.participantIds.map((memberId) => ({
+        memberId,
+        weight: weightByMember.get(memberId),
+      }));
+    }
     case "BY_GROUP":
       return tripMembers.map((member) => ({
         memberId: member.id,

@@ -27,7 +27,6 @@ export default async function EditExpensePage({
     id: member.id,
     name: member.name,
     groupId: member.groupId,
-    weight: fromDb(member.weight).toString(),
   }));
   const memberIds = members.map((m) => m.id);
   const shareMemberIds = expense.shares.map((s) => s.memberId);
@@ -84,6 +83,19 @@ export default async function EditExpensePage({
               ? shareMemberIds
               : undefined,
           groupId,
+          // 權重不落地，只有分攤結果 shareHome 落地——但同一筆支出裡
+          // weight_i / weight_j = share_i / share_j，用既有 shareHome
+          // 當權重預填，未改動直接重送會重現一模一樣的分攤比例（跟下面
+          // exactShares 用同一份 shares 資料反推的邏輯相同）
+          weights:
+            expense.splitMode === "WEIGHT"
+              ? Object.fromEntries(
+                  expense.shares.map((share) => [
+                    share.memberId,
+                    fromDb(share.shareHome).toString(),
+                  ]),
+                )
+              : undefined,
           exactShares:
             expense.splitMode === "EXACT"
               ? Object.fromEntries(

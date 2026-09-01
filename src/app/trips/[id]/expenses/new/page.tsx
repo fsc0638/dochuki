@@ -11,7 +11,6 @@ import { ReparseButton } from "@/components/expense/ReparseButton";
 import { toDateTimeLocalValue } from "@/lib/dateTimeLocal";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { Money } from "@/lib/money/decimal";
-import { fromDb } from "@/lib/money/fromDb";
 import { loadReceipt, lowConfidenceFields, parseReceiptJson } from "@/lib/receipts/load";
 import type { ReceiptParseOutput } from "@/lib/schemas/receipt";
 import { loadTrip } from "@/lib/trips/load";
@@ -65,7 +64,6 @@ export default async function NewExpensePage({
     id: member.id,
     name: member.name,
     groupId: member.groupId,
-    weight: fromDb(member.weight).toString(),
   }));
   const memberIds = members.map((m) => m.id);
 

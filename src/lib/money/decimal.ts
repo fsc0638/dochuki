@@ -38,7 +38,7 @@ export const MONEY_SCALE = 6;
 export const RATE_SCALE = 8;
 
 /**
- * 係數精度，對應 schema 的 `Decimal(8,4)` / `Decimal(12,4)` / `Decimal(6,4)`
- * （`Member.weight`、`LineItem.qty`、`LineItem.taxRate`）。
+ * 係數精度，對應 schema 的 `Decimal(12,4)` / `Decimal(6,4)`
+ * （`LineItem.qty`、`LineItem.taxRate`）。
  */
 export const FACTOR_SCALE = 4;
