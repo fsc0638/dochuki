@@ -32,18 +32,3 @@ body {
   color: var(--color-ink);
 }
 
-/*
- * 自訂下拉箭頭，取代瀏覽器原生 <select> 外觀——收合狀態下跟其他輸入框
- * 同一套視覺語言。展開後的選項清單瀏覽器不允許 CSS 完全接管樣式，這是
- * 平台限制，維持系統原生（多數正式產品也是這樣處理）。
- */
-@layer utilities {
-  .select-chevron {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.5L10 12L14.5 7.5' stroke='%235f5e5a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.6rem center;
-    background-size: 14px;
-    padding-right: 2rem;
-  }
-}

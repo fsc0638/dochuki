@@ -1,4 +1,5 @@
-import { inputClass, selectClass } from "@/components/ui/Field";
+import { inputClass } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import type { ExpenseFilter } from "@/lib/trips/load";
 
@@ -23,34 +24,28 @@ export function ExpenseFilters({
     >
       <label className="flex flex-col gap-1">
         <span className="text-xs text-ink-soft">分類</span>
-        <select
+        <Select
           name="category"
           defaultValue={filter.category ?? ""}
-          className={`${selectClass} py-1.5`}
-        >
-          <option value="">全部</option>
-          {EXPENSE_CATEGORIES.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
+          className="py-1.5"
+          options={[
+            { value: "", label: "全部" },
+            ...EXPENSE_CATEGORIES.map((category) => ({ value: category, label: category })),
+          ]}
+        />
       </label>
 
       <label className="flex flex-col gap-1">
         <span className="text-xs text-ink-soft">成員</span>
-        <select
+        <Select
           name="memberId"
           defaultValue={filter.memberId ?? ""}
-          className={`${selectClass} py-1.5`}
-        >
-          <option value="">全部</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
+          className="py-1.5"
+          options={[
+            { value: "", label: "全部" },
+            ...members.map((member) => ({ value: member.id, label: member.name })),
+          ]}
+        />
       </label>
 
       <label className="flex flex-col gap-1">

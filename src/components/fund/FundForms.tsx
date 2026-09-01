@@ -5,8 +5,9 @@ import {
   createFundAction,
   createFundContributionAction,
 } from "@/app/trips/[id]/funds/actions";
-import { Field, inputClass, selectClass } from "@/components/ui/Field";
+import { Field, inputClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { Select } from "@/components/ui/Select";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { INITIAL_ACTION_STATE } from "@/lib/actionState";
 import { COMMON_CURRENCIES } from "@/lib/constants";
@@ -21,13 +22,12 @@ export function CreateFundForm({ tripId }: { tripId: string }) {
         <input id="name" name="name" type="text" required defaultValue="公費" className={inputClass} />
       </Field>
       <Field label="幣別" htmlFor="currency" errors={state.fieldErrors?.currency}>
-        <select id="currency" name="currency" defaultValue="JPY" className={selectClass}>
-          {COMMON_CURRENCIES.map((currency) => (
-            <option key={currency} value={currency}>
-              {currency}
-            </option>
-          ))}
-        </select>
+        <Select
+          id="currency"
+          name="currency"
+          defaultValue="JPY"
+          options={COMMON_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+        />
       </Field>
       <SubmitButton>建立公費池</SubmitButton>
       <FormMessage error={state.error} />
@@ -51,13 +51,12 @@ export function ContributionForm({
       <input type="hidden" name="fundId" value={fundId} />
       <div className="flex gap-3">
         <Field label="成員" htmlFor="memberId" errors={state.fieldErrors?.memberId}>
-          <select id="memberId" name="memberId" required className={selectClass}>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="memberId"
+            name="memberId"
+            required
+            options={members.map((member) => ({ value: member.id, label: member.name }))}
+          />
         </Field>
         <Field label="金額" htmlFor="amount" errors={state.fieldErrors?.amount}>
           <input

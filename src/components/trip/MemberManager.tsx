@@ -9,8 +9,9 @@ import {
   updateMemberAction,
 } from "@/app/trips/[id]/members/actions";
 import { DeleteButton } from "@/components/ui/DeleteButton";
-import { Field, inputClass, selectClass } from "@/components/ui/Field";
+import { Field, inputClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { Select } from "@/components/ui/Select";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { INITIAL_ACTION_STATE } from "@/lib/actionState";
 
@@ -63,14 +64,15 @@ function CreateMemberForm({ tripId, groups }: { tripId: string; groups: GroupRow
       </Field>
       <div className="flex gap-3">
         <Field label="組別" htmlFor="member-group">
-          <select id="member-group" name="groupId" defaultValue="" className={selectClass}>
-            <option value="">未分組</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="member-group"
+            name="groupId"
+            defaultValue=""
+            options={[
+              { value: "", label: "未分組" },
+              ...groups.map((group) => ({ value: group.id, label: group.name })),
+            ]}
+          />
         </Field>
         <Field label="權重（按權重分攤用）" htmlFor="member-weight" errors={state.fieldErrors?.weight}>
           <input
@@ -114,18 +116,15 @@ function MemberItem({
           className={inputClass}
         />
         <div className="flex items-center gap-2">
-          <select
+          <Select
             name="groupId"
             defaultValue={member.groupId ?? ""}
-            className={`${selectClass} flex-1`}
-          >
-            <option value="">未分組</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
+            className="flex-1"
+            options={[
+              { value: "", label: "未分組" },
+              ...groups.map((group) => ({ value: group.id, label: group.name })),
+            ]}
+          />
           <input
             name="weight"
             type="text"

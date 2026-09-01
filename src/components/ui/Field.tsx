@@ -26,6 +26,3 @@ export function Field({
 
 export const inputClass =
   "rounded-md border border-washi bg-white px-3 py-2 text-base text-ink focus:border-stamp-mid focus:outline-none";
-
-/** 給所有 <select> 用——收合狀態跟 inputClass 同一套外觀，換掉瀏覽器原生箭頭 */
-export const selectClass = `${inputClass} select-chevron`;

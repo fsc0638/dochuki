@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useActionState, useMemo, useRef, useState } from "react";
-import { Field, inputClass, selectClass } from "@/components/ui/Field";
+import { Field, inputClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { Select } from "@/components/ui/Select";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { SplitModePicker } from "@/components/expense/SplitModePicker";
 import { SplitPreview, type PreviewShare } from "@/components/expense/SplitPreview";
@@ -277,18 +278,12 @@ export function ExpenseForm({
 
       <div className="flex gap-3">
         <Field label="分類" htmlFor="category" errors={state.fieldErrors?.category}>
-          <select
+          <Select
             id="category"
             name="category"
             defaultValue={initial?.category ?? EXPENSE_CATEGORIES[0]}
-            className={selectClass}
-          >
-            {EXPENSE_CATEGORIES.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
+            options={EXPENSE_CATEGORIES.map((category) => ({ value: category, label: category }))}
+          />
         </Field>
         <Field label="付款時間" htmlFor="paidAt" errors={state.fieldErrors?.paidAt}>
           <input
@@ -303,19 +298,13 @@ export function ExpenseForm({
       </div>
 
       <Field label="付款人" htmlFor="payerId" errors={state.fieldErrors?.payerId}>
-        <select
+        <Select
           id="payerId"
           name="payerId"
           value={payerId}
-          onChange={(event) => setPayerId(event.target.value)}
-          className={selectClass}
-        >
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
+          onChange={setPayerId}
+          options={members.map((member) => ({ value: member.id, label: member.name }))}
+        />
       </Field>
 
       <div className="flex gap-3">
@@ -422,20 +411,17 @@ export function ExpenseForm({
 
       {splitMode === "BY_GROUP" && (
         <Field label="組別" htmlFor="groupId" errors={state.fieldErrors?.groupId}>
-          <select
+          <Select
             id="groupId"
             name="groupId"
             value={groupId}
-            onChange={(event) => setGroupId(event.target.value)}
-            className={selectClass}
-          >
-            {groups.length === 0 && <option value="">（尚無組別）</option>}
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
+            onChange={setGroupId}
+            options={
+              groups.length === 0
+                ? [{ value: "", label: "（尚無組別）" }]
+                : groups.map((group) => ({ value: group.id, label: group.name }))
+            }
+          />
         </Field>
       )}
 

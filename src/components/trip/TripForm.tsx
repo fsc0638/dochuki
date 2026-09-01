@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
-import { Field, inputClass, selectClass } from "@/components/ui/Field";
+import { Field, inputClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { Select } from "@/components/ui/Select";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { FixedRatesEditor } from "@/components/trip/FixedRatesEditor";
 import { INITIAL_ACTION_STATE, type ActionState } from "@/lib/actionState";
@@ -91,18 +92,12 @@ export function TripForm({
         htmlFor="homeCurrency"
         errors={state.fieldErrors?.homeCurrency}
       >
-        <select
+        <Select
           id="homeCurrency"
           name="homeCurrency"
           defaultValue={initial?.homeCurrency ?? "TWD"}
-          className={selectClass}
-        >
-          {COMMON_CURRENCIES.map((currency) => (
-            <option key={currency} value={currency}>
-              {currency}
-            </option>
-          ))}
-        </select>
+          options={COMMON_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+        />
       </Field>
 
       <FixedRatesEditor initial={initial?.fixedRates} />
