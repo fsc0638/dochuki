@@ -146,6 +146,10 @@ Ampere A1 是 **arm64** 架構，跟這台 Windows 機器（x64）不同，以�
 >    （`sudo` 會重設 PATH，不帶 `env "PATH=$PATH"` 會找不到 nvm 的 pnpm——見坑 ④）
 >    補完後端到端實測 `GET /api/trips/trip-niigata-2026/export/pdf`：
 >    **HTTP 200、355,090 bytes、4.9 秒、`%PDF-1.4`、2 頁**，dev server log 無錯誤。
+>    **產出的 PDF 由使用者親自開檔目視確認：中文顯示正常，未出現豆腐方塊**
+>    （2026-09-07）——字型嵌入正確，`NotoSansCJKtc-Regular.otf` 在 arm64 上
+>    運作無誤。這一項程式面驗不出來：中文若沒嵌好，檔案一樣是合法的 2 頁 PDF、
+>    大小也相近，只有人眼看得出差別。
 
 ## 之後才做：對外公開網域＋HTTPS（P5 階段，現在不要做）
 
