@@ -110,7 +110,7 @@ P5 要開 80/443），兩層都要各自開一次，只開 OCI 那層、VM 內 i
 - **改程式**：裝 VS Code 的 **Remote-SSH** 套件，直接連上 VM，體感等同本機開發，
   終端機／檔案總管都在遠端跑
 
-## 之後要盯的 ARM 相容性風險（尚未驗證，先記下）
+## ARM 相容性風險（2026-09-06 已全數實測解除）
 
 Ampere A1 是 **arm64** 架構，跟這台 Windows 機器（x64）不同，以下兩處 P3 已經
 用到、還沒在 arm64 上測過：
@@ -124,6 +124,28 @@ Ampere A1 是 **arm64** 架構，跟這台 Windows 機器（x64）不同，以�
 
 這兩點不擋今天的建置計畫，等 Phase C 跑完 `pnpm test regression` 綠燈後，
 下次動到 PDF 匯出或 migrate 報錯時再回來查。
+
+> **2026-09-06 實測結果：兩項都沒問題，此節保留供日後換架構時參照。**
+>
+> 在 VM 上把程式碼更新到 `034e0d3`（最新）後實測：
+>
+> 1. **Prisma 7**：`prisma generate` 在 aarch64 正常產出 client（7.9.1，235ms），
+>    `migrate deploy` 套用 `20260901120000_remove_member_weight` 成功，
+>    `db seed` 寫入 `Decimal(18,6)` 正確。`schema.prisma` 未寫死 `binaryTargets`，
+>    Prisma 自行解析架構即可，**不需要任何調整**。
+>    `pnpm test` 209 passed + 1 skipped、`pnpm test regression` 17/17。
+>    DB 實查亦重現歷史斷言：ExpenseShare 合計 666,294.25 TWD ＋ 公費
+>    300,000 JPY×0.25 = 75,000 TWD，總計 **741,294.25**（顯示值 741,294）。
+>
+> 2. **Playwright**：`playwright install chromium` 有 **arm64 版可下載**（約 984MB，
+>    含 chromium／headless_shell／ffmpeg）。真正的障礙不是架構而是
+>    **Ubuntu server 沒有桌面環境的共享函式庫**，要補跑：
+>    ```bash
+>    sudo env "PATH=$PATH" pnpm exec playwright install-deps chromium
+>    ```
+>    （`sudo` 會重設 PATH，不帶 `env "PATH=$PATH"` 會找不到 nvm 的 pnpm——見坑 ④）
+>    補完後端到端實測 `GET /api/trips/trip-niigata-2026/export/pdf`：
+>    **HTTP 200、355,090 bytes、4.9 秒、`%PDF-1.4`、2 頁**，dev server log 無錯誤。
 
 ## 之後才做：對外公開網域＋HTTPS（P5 階段，現在不要做）
 
@@ -262,7 +284,8 @@ ssh dochuki 'export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; pnpm -v'
 - VM `~/.ssh/authorized_keys`：只有 Windows 那把 `oracle devbot tokyo`（未被動過）
 - VM `~/.ssh/authorized_keys2`：Mac 那把 `oracle devbot mac`
 - Mac 直連實測通過：`ssh dochuki` → `ubuntu@fsc0638-dev-vcn`，Ubuntu 24.04.4 LTS / aarch64
-- Bastion `Bastion202609061805` 與其 session 已完成任務；Bastion 本身免費，留著可當下次換機器的備援，但 **CIDR allowlist 綁著當時的對外 IP，換網路（咖啡廳、手機熱點）就要回去改**
+- Bastion `Bastion202609061805`：session 用完即刪，**Bastion 本體依使用者裁示保留**（2026-09-06），當作下次換機器／弄丟金鑰時的救援入口，不必重走一輪。
+  服務免費、不對外開任何 port。**但 CIDR allowlist 綁死當時的對外 IP `114.43.58.161/32`——換到咖啡廳或手機熱點就連不上，要回 Console 改這一欄**
 
 ### 要再加第三台用戶端時
 
