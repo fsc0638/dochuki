@@ -269,6 +269,19 @@ Managed SSH session 的運作方式是：把 `~/.ssh/authorized_keys` 備份成 
 authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2
 ```
 （OpenSSH 預設值；`/etc/ssh/sshd_config` 未覆寫）。把永久金鑰寫進 **`~/.ssh/authorized_keys2`**，sshd 照樣認，而 Bastion 外掛完全不碰這個檔。不需要 sudo，也不會動到既有金鑰。
+
+> **2026-09-07 後續：所有金鑰統一移到 `authorized_keys2`，`authorized_keys` 刻意留空。**
+> 依使用者裁示，Windows 那把 `oracle devbot tokyo` 也從 `authorized_keys` 搬到
+> `authorized_keys2`，兩把並存；`authorized_keys` 只保留一段說明註解，指向本節。
+> 這樣兩台用戶端都不受 Bastion 還原影響，位置也一致。
+>
+> 搬移時的防呆（金鑰行打錯會讓那台機器登不進來，而對方私鑰不在手邊時無法實測）：
+> 用 `grep -F` 原樣取出、不重打任何字元；`cmp` 逐位元組比對搬移前後那一行；
+> 比對指紋；並在 VM 留下 `~/.ssh/authorized_keys.YYYY-MM-DD.bak`。
+> 還原只要一行：
+> ```bash
+> ssh dochuki 'cp ~/.ssh/authorized_keys.2026-09-07.bak ~/.ssh/authorized_keys'
+> ```
 驗證方式要嚴謹：**刪掉 session、確認 `authorized_keys` 已被還原成只剩原本那把之後**，再測直連——session 還在時測不出真假。
 
 **④ nvm 在非互動 SSH 不載入**
@@ -285,8 +298,12 @@ ssh dochuki 'export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; pnpm -v'
 
 ### 完成後的狀態
 
-- VM `~/.ssh/authorized_keys`：只有 Windows 那把 `oracle devbot tokyo`（未被動過）
-- VM `~/.ssh/authorized_keys2`：Mac 那把 `oracle devbot mac`
+- VM `~/.ssh/authorized_keys`：**刻意留空**（只有說明註解）——2026-09-07 起
+- VM `~/.ssh/authorized_keys2`：**兩把金鑰都在這裡**
+  - `SHA256:fYGOs92e…` `oracle devbot mac`（macOS）
+  - `SHA256:sW5+Ggcp…` `oracle devbot tokyo`（Windows）
+  - 驗證：`ssh -v` 顯示認證來源為 `/home/ubuntu/.ssh/authorized_keys2`，
+    且 `ssh-keygen -lf ~/.ssh/authorized_keys` 金鑰數為 0
 - Mac 直連實測通過：`ssh dochuki` → `ubuntu@fsc0638-dev-vcn`，Ubuntu 24.04.4 LTS / aarch64
 - Bastion `Bastion202609061805`：session 用完即刪，**Bastion 本體依使用者裁示保留**（2026-09-06），當作下次換機器／弄丟金鑰時的救援入口，不必重走一輪。
   服務免費、不對外開任何 port。**但 CIDR allowlist 綁死當時的對外 IP `114.43.58.161/32`——換到咖啡廳或手機熱點就連不上，要回 Console 改這一欄**
