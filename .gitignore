@@ -46,3 +46,6 @@ next-env.d.ts
 
 # Prisma Client 產生的程式碼（由 prisma generate 重建）
 /src/generated/prisma
+
+# 改檔前的本機備份（全域慣例：檔名.YYYY-MM-DD.bak）——不進版控
+/99-backups/
