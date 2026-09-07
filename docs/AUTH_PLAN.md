@@ -277,7 +277,7 @@ session 過期回的 401 會被歸類成「這筆資料有問題」。應該把 
 |---|---|---|
 | **P7.0** ✅ | 見下方「P7.0 實際涵蓋範圍」——盤點後比原估的六個函式更廣 | 完成 2026-09-07：218 測試全綠、regression 17/17 不變 |
 | **P7.1** ✅ | 見下方「P7.1 落地紀錄」 | 完成 2026-09-07：`pnpm auth` 四個子指令實測通過，241 測試全綠 |
-| **P7.2** | 註冊／登入／登出頁、`middleware.ts` 做未登入導向、登入失敗次數限制 | 能用密碼登入登出 |
+| **P7.2** ✅ | 見下方「P7.2 落地紀錄」 | 完成 2026-09-07：瀏覽器實測註冊／登入／登出／節流／轉址防護全通過 |
 | **P7.3** | 團長發券與撤銷 UI、認領頁、綁定 `Member` | 用邀請連結能在另一台裝置加入並看到自己的分攤 |
 | **P7.4** | 31 個進出口逐一守門、列舉測試、離線重放 401、登出清佇列 | 列舉測試全綠；用 A 帳號無法讀寫 B 的行程 |
 | **P7.5** | 反向代理＋TLS＋OCI Security List 開 80/443 | 手機用真實網域連得到 |
@@ -432,6 +432,72 @@ ssh dochuki -t 'cd ~/dochuki && export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.s
 **P7.2 的註冊頁面上線後這個步驟就不需要了**——正式站直接用網頁註冊即可，
 第一個註冊的人建立行程時自然成為 OWNER。這段留著是給「網頁註冊還沒好、
 但正式站已經要用」的空窗期。
+
+## P7.2 落地紀錄（2026-09-07 完成）
+
+### middleware 不是安全邊界，這點要寫在最前面
+
+`src/middleware.ts` 跑在 Edge runtime，**連不到資料庫**，所以它只能看
+「cookie 在不在」，沒辦法驗證那個 token 是真的——任何人手動塞一個
+`dochuki_session=x` 就能通過。它唯一的職責是讓沒登入的人少看一次
+「載入後才被踢走」的閃爍。
+
+真正的守門是每個頁面／action／route 各自呼叫 `getCurrentUser()`，那是 P7.4
+要補的 31 個進出口。**不要因為 middleware 存在就以為已經守住了。**
+
+`/api/` 前綴刻意跳過 middleware：離線佇列補送打的是
+`POST /api/trips/[id]/expenses`，session 過期時如果回一個導向登入頁的 3xx，
+Service Worker 會拿到一份 HTML 而不是可判讀的錯誤。API 的身分檢查留給
+route handler 自己做，讓它能回真正的 401。
+
+### 登入失敗節流
+
+前 5 次失敗不鎖，之後每多失敗一次鎖久一倍，**上限 15 分鐘**。成功登入歸零。
+兩個欄位存在 `User` 上（`failedLoginAttempts`／`lockedUntil`），
+migration `20260907170000_login_throttle`。
+
+**刻意不做永久鎖定**：鎖帳號本身可以被拿來癱瘓別人的帳號（知道 email 就能
+一直亂猜），15 分鐘足以讓自動化撞庫不划算，又不會把正常使用者永久擋在外面。
+
+鎖定期間**連正確密碼也不放行**，否則節流形同虛設。鎖定與密碼錯誤給不同的
+訊息（鎖定要說出來，不然使用者只會一直重試把鎖定時間越拖越長），但兩者都
+不透露「這個 email 有沒有註冊」。
+
+### 開放轉址防護
+
+`?next=` 是登入頁上唯一「使用者可控且會影響瀏覽器導向」的參數，抽成
+`src/lib/auth/redirect.ts` 的 `safeNext()` 單獨測試。擋掉絕對網址、
+`//evil.example`（protocol-relative）、`/\evil.example`（反斜線變形），
+以及前面夾雜空白或控制字元的變形——那些字元瀏覽器解析網址時會忽略，
+光靠 `startsWith("/")` 會被騙過去。
+
+### cookie
+
+`httpOnly` + `sameSite=lax` + `path=/`。`secure` **依環境決定**：正式站掛上
+TLS 之前是純 HTTP，開了 secure 瀏覽器根本不會送出 cookie，等於誰都登不進去。
+P7.5 掛上憑證後 `NODE_ENV=production` 本來就成立，會自動開啟。
+
+登出**不只清 cookie，也把 session 從資料庫砍掉**。只清 cookie 的話那組 token
+仍然有效，任何側錄到它的人在到期前都還能拿來冒用。
+
+### 驗證
+
+- `pnpm lint` / `typecheck` / `build` 全過（middleware 39.3 kB 有進 bundle）
+- `pnpm test` 254 passed（新增 13 條：節流 7、轉址 6），regression 17/17 不變
+- 瀏覽器對 dev server 實測完整流程：未登入存取 `/trips` → 307 導向
+  `/login?next=%2Ftrips` → 註冊（密碼不一致有擋）→ 自動登入並導回 `/trips` →
+  帳號列顯示名稱與登出 → `document.cookie` **讀不到 session**（httpOnly 生效）
+  → 登出後 DB 的 session 歸零 → 重新登入成功 → **把 `next` 竄改成
+  `https://evil.example/phish` 仍落在 `/trips`** → 連續 6 次錯誤密碼，
+  第 6 次起顯示「登入嘗試次數過多」→ 鎖定期間輸入正確密碼仍被擋。
+  測試帳號已刪除，管理者帳號與帳務資料未受影響
+
+### 這次踩到的坑
+
+改完 schema 跑 `prisma generate` 之後，**還在跑的 `pnpm dev` 不會自動載入
+新的 client**，登入時會丟 `Unknown field 'failedLoginAttempts'` 的 500。
+不是程式錯誤，重啟 dev server 即可。跟先前記過的「`pnpm build` 會清掉
+`pnpm dev` 的 `.next`」是同一類：**動到生成物之後要重啟開發伺服器**。
 
 ## 尚未裁示的事項
 

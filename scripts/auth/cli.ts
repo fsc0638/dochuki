@@ -126,11 +126,15 @@ async function cmdBootstrap(): Promise<void> {
 async function cmdIssueSession(): Promise<void> {
   const email = (await ask("電子郵件：")).toLowerCase();
   const password = await askSecret("密碼（不會顯示）：");
-  const user = await authenticate(email, password);
-  if (user === null) {
-    throw new Error("帳號或密碼錯誤");
+  const result = await authenticate(email, password);
+  if ("failure" in result) {
+    throw new Error(
+      result.failure === "locked"
+        ? "登入嘗試次數過多，此帳號暫時鎖定，請稍後再試"
+        : "帳號或密碼錯誤",
+    );
   }
-  const { token, expiresAt } = await createSession(user.id, "dochuki-cli");
+  const { token, expiresAt } = await createSession(result.user.id, "dochuki-cli");
   console.log("\nsession token（只會顯示這一次）：");
   console.log(token);
   console.log(`到期：${expiresAt.toISOString()}`);

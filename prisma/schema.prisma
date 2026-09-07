@@ -204,6 +204,15 @@ model User {
   passwordHash String?
   displayName  String
 
+  // 登入失敗節流（P7.2）。連續失敗會鎖一小段時間，時間隨次數遞增但有上限。
+  // 成功登入就歸零。
+  //
+  // 取捨：鎖帳號會讓人可以拿別人的 email 亂猜來癱瘓那個帳號，所以鎖定時間
+  // 上限壓在 15 分鐘、不做永久鎖定——擋住的是自動化撞庫，而不是「讓攻擊者
+  // 有辦法把人鎖在門外」。
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
   sessions       Session[]
   memberships    TripMembership[]
   invitesCreated Invite[]         @relation("inviteCreator")

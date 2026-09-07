@@ -173,10 +173,12 @@ describe("auth/users · 建立與驗證", () => {
     });
 
     const ok = await authenticate(EMAIL_B, PASSWORD);
-    expect(ok?.id).toBe(created.id);
+    expect("user" in ok && ok.user.id).toBe(created.id);
 
-    expect(await authenticate(EMAIL_B, "wrong-password")).toBeNull();
-    expect(await authenticate("nobody@test.invalid", PASSWORD)).toBeNull();
+    expect(await authenticate(EMAIL_B, "wrong-password")).toEqual({ failure: "invalid" });
+    expect(await authenticate("nobody@test.invalid", PASSWORD)).toEqual({
+      failure: "invalid",
+    });
   });
 
   it("email 重複時明確拒絕", async () => {
@@ -197,9 +199,12 @@ describe("auth/users · adoptOrphanTrips", () => {
   let orphanTripId: string;
   let ownedTripId: string;
   let otherUserId: string;
+  /** 測試開始前資料庫既有的成員關係數。用來確認測試沒有留下殘渣。 */
+  let baselineMemberships: number;
 
   beforeAll(async () => {
     await purgeTestUsers();
+    baselineMemberships = await prisma.tripMembership.count();
     userId = (
       await createPasswordUser({
         email: EMAIL_A,
@@ -241,8 +246,12 @@ describe("auth/users · adoptOrphanTrips", () => {
    * trip-niigata-2026 一起收編——那正是這個函式該做的事，不是 bug。
    *
    * 清理靠 TripMembership.userId 的 onDelete: Cascade：刪掉測試帳號，連帶
-   * 掛在新潟團上的那筆成員關係也會一起消失，迴歸資料回到原狀。所以
-   * purgeTestUsers() 一定要跑，順序也不能放在刪測試行程之前。
+   * 它在既有行程上留下的成員關係也會一起消失。所以 purgeTestUsers() 一定要
+   * 跑，順序也不能放在刪測試行程之前。
+   *
+   * 檢查用「跟開始前比較」而不是「必須為 0」——資料庫裡本來就可能有真實
+   * 帳號的成員關係（例如管理者 bootstrap 建立的那筆），寫死 0 會在正常
+   * 使用之後開始誤報。
    */
   afterAll(async () => {
     await prisma.tripMembership.deleteMany({
@@ -251,10 +260,11 @@ describe("auth/users · adoptOrphanTrips", () => {
     await prisma.trip.deleteMany({ where: { id: { in: [orphanTripId, ownedTripId] } } });
     await purgeTestUsers();
 
-    // 確認新潟團真的回到「無主」狀態，避免這個測試悄悄弄髒迴歸資料
-    const leftover = await prisma.tripMembership.count();
-    if (leftover !== 0) {
-      throw new Error(`測試後仍殘留 ${leftover} 筆 TripMembership，迴歸資料可能被污染`);
+    const after = await prisma.tripMembership.count();
+    if (after !== baselineMemberships) {
+      throw new Error(
+        `測試後 TripMembership 從 ${baselineMemberships} 變成 ${after} 筆，可能污染了既有資料`,
+      );
     }
   });
 

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Serif_TC } from "next/font/google";
+import { AccountBar } from "@/components/auth/AccountBar";
 import { OutboxAutoSync } from "@/components/OutboxAutoSync";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import "./globals.css";
@@ -43,6 +44,7 @@ export default function RootLayout({
   return (
     <html lang="zh-Hant" className={notoSerifTC.variable}>
       <body className="flex min-h-screen flex-col">
+        <AccountBar />
         <div className="flex-1">{children}</div>
         <ServiceWorkerRegister />
         <OutboxAutoSync />

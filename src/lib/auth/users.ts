@@ -41,22 +41,82 @@ const DUMMY_HASH =
   "scrypt$65536$8$1$AAAAAAAAAAAAAAAAAAAAAA$" +
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
+/**
+ * 登入失敗節流（P7.2）。
+ *
+ * 前 FREE_ATTEMPTS 次失敗不鎖，之後每多失敗一次就鎖久一點，上限
+ * MAX_LOCK_MS。**刻意不做永久鎖定**——鎖帳號這件事本身可以被拿來癱瘓
+ * 別人的帳號（知道 email 就能一直亂猜），15 分鐘的上限足以讓自動化撞庫
+ * 變得不划算，又不至於讓正常使用者被永久擋在門外。
+ */
+const FREE_ATTEMPTS = 5;
+const BASE_LOCK_MS = 60 * 1000;
+const MAX_LOCK_MS = 15 * 60 * 1000;
+
+function lockDurationFor(attempts: number): number {
+  const over = attempts - FREE_ATTEMPTS;
+  if (over <= 0) return 0;
+  return Math.min(BASE_LOCK_MS * 2 ** (over - 1), MAX_LOCK_MS);
+}
+
+export type AuthFailure = "invalid" | "locked";
+
+/**
+ * 以 email＋密碼驗證身分。
+ *
+ * 回傳 `{ user }` 或 `{ failure }`。呼叫端對 invalid 與 locked 應該給
+ * **不同的訊息**（鎖定要告訴使用者稍後再試，否則他只會一直重試），但兩者
+ * 都不能透露「這個 email 有沒有註冊」。
+ */
 export async function authenticate(
   email: string,
   password: string,
-): Promise<{ id: string } | null> {
+): Promise<{ user: { id: string } } | { failure: AuthFailure }> {
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { id: true, passwordHash: true },
+    select: {
+      id: true,
+      passwordHash: true,
+      failedLoginAttempts: true,
+      lockedUntil: true,
+    },
   });
 
   if (user === null) {
     await verifyPassword(password, DUMMY_HASH);
-    return null;
+    return { failure: "invalid" };
+  }
+
+  if (user.lockedUntil !== null && user.lockedUntil.getTime() > Date.now()) {
+    // 仍然跑一次雜湊，讓「鎖定中」與「密碼錯誤」的回應時間不要差一個量級
+    await verifyPassword(password, DUMMY_HASH);
+    return { failure: "locked" };
   }
 
   const ok = await verifyPassword(password, user.passwordHash);
-  return ok ? { id: user.id } : null;
+
+  if (!ok) {
+    const attempts = user.failedLoginAttempts + 1;
+    const lockMs = lockDurationFor(attempts);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: attempts,
+        lockedUntil: lockMs === 0 ? null : new Date(Date.now() + lockMs),
+      },
+    });
+    return { failure: lockMs === 0 ? "invalid" : "locked" };
+  }
+
+  // 成功就歸零。只在真的有紀錄要清時才寫，省掉每次登入都無謂地更新一列
+  if (user.failedLoginAttempts !== 0 || user.lockedUntil !== null) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  }
+
+  return { user: { id: user.id } };
 }
 
 /**
