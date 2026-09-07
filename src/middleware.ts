@@ -18,6 +18,12 @@ const SESSION_COOKIE = "dochuki_session";
 const PUBLIC_PATHS = ["/login", "/signup"];
 
 /**
+ * 邀請連結的整個子樹都是公開的——被邀請者本來就還沒有帳號，
+ * 導去登入頁等於讓他永遠無法認領（P7.3）。券本身的有效性由頁面自己驗。
+ */
+const PUBLIC_PREFIXES = ["/invite/"];
+
+/**
  * 這些前綴完全不經過 middleware 判斷。
  *
  * `/api/` 特別重要：離線佇列補送打的是 `/api/trips/[id]/expenses`，
@@ -38,6 +44,9 @@ export function middleware(request: NextRequest): NextResponse {
     return NextResponse.next();
   }
   if (PUBLIC_PATHS.includes(pathname)) {
+    return NextResponse.next();
+  }
+  if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     return NextResponse.next();
   }
 
