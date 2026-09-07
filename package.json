@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "auth": "tsx scripts/auth/cli.ts"
   },
   "dependencies": {
     "@google/genai": "^2.18.0",

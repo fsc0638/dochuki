@@ -39,6 +39,16 @@ enum ParseEngine {
   MANUAL
 }
 
+/// 一個 User 在一個 Trip 裡的角色（P7.1）。
+/// OWNER 是建立者：可改行程設定、發邀請券、刪行程。
+/// EDITOR 是一般團員：可記帳、改支出，但不能邀請別人（2026-09-07 使用者裁示）。
+/// VIEWER 只能看。
+enum TripRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
 model Trip {
   id           String    @id @default(cuid())
   name         String
@@ -51,6 +61,8 @@ model Trip {
   expenses     Expense[]
   funds        Fund[]
   receipts     Receipt[]
+  memberships  TripMembership[]
+  invites      Invite[]
   createdAt    DateTime  @default(now())
 }
 
@@ -72,6 +84,10 @@ model Member {
   shares      ExpenseShare[]
   paid        Expense[]      @relation("payer")
   fundEntries FundEntry[]
+  // 這位團員綁到哪個登入帳號（P7.1）。null 代表還沒有人認領這個身分——
+  // 名字先由團長建好、之後才發邀請券是常態，所以是選填的一對一。
+  membership  TripMembership?
+  invites     Invite[]
 }
 
 model Expense {
@@ -171,4 +187,87 @@ model FxRate {
   source String // frankfurter / manual
 
   @@id([date, base, quote])
+}
+
+// ============================================================== 帳號系統 ====
+// P7.1。設計說明見 docs/AUTH_PLAN.md。
+//
+// 核心決定：登入身分（User）與分攤身分（Member）分開，用 TripMembership 綁。
+// Member 維持原樣不動，分攤引擎繼續以 memberId 為準，src/lib/money/ 一行不用改。
+
+model User {
+  id String @id @default(cuid())
+  // 密碼帳號才有 email；邀請進來的帳號兩個都是 null（2026-09-07 裁示：
+  // 密碼帳號用 email 當識別欄位）。可空欄位加 @unique 在 PostgreSQL 是
+  // 允許多筆 NULL 的，所以不會互相打架。
+  email        String? @unique
+  passwordHash String?
+  displayName  String
+
+  sessions       Session[]
+  memberships    TripMembership[]
+  invitesCreated Invite[]         @relation("inviteCreator")
+  createdAt      DateTime         @default(now())
+}
+
+model Session {
+  id String @id @default(cuid())
+  // 只存 token 的 SHA-256，不存原值——資料庫外洩不等於 session 被冒用。
+  // 原始 token 只在簽發當下回傳一次，之後任何地方都拿不回來。
+  tokenHash String @unique
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  // 清理過期 session 的批次會掃這個欄位
+  @@index([expiresAt])
+}
+
+model TripMembership {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 這個帳號在該行程對應到哪個團員。一個 Member 最多被一個帳號認領，
+  // 所以是 @unique；null 代表這個帳號有權限但不參與分攤（例如純記帳的人）。
+  memberId String?  @unique
+  member   Member?  @relation(fields: [memberId], references: [id])
+  role     TripRole @default(EDITOR)
+  joinedAt DateTime @default(now())
+
+  @@unique([tripId, userId])
+  @@index([userId])
+}
+
+model Invite {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  // 具名邀請（2026-09-07 裁示）：這張券就是給這位團員的，認領時直接綁定，
+  // 不讓被邀請者自己挑要當誰。
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id])
+  // 券只能發 EDITOR 或 VIEWER——被邀請者不能再邀請別人（2026-09-07 裁示），
+  // 而發券是 OWNER 才有的權限。這條由 P7.3 的建立函式與 zod 強制，
+  // enum 本身無法只允許部分值。
+  role TripRole @default(EDITOR)
+
+  // 同樣只存雜湊。可重複使用，但有三道閘門：到期日、可用次數、隨時可撤銷。
+  tokenHash String    @unique
+  expiresAt DateTime
+  maxUses   Int       @default(5)
+  usedCount Int       @default(0)
+  revokedAt DateTime?
+
+  createdBy String
+  creator   User     @relation("inviteCreator", fields: [createdBy], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([tripId])
 }
