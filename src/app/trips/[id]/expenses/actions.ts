@@ -1,5 +1,6 @@
 "use server";
 
+import { guardAction } from "@/lib/auth/guard";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { type ActionState, toErrorMessage } from "@/lib/actionState";
@@ -38,6 +39,11 @@ export async function createExpenseAction(
       fieldErrors: flattenFieldErrors(parsed.error.flatten().fieldErrors),
     };
   }
+
+  // tripId 來自表單，所以守門必須排在 zod 驗證之後——驗證前拿到的是未經
+  // 檢查的字串。驗證只保證格式，權限仍然要問
+  const guard = await guardAction(parsed.data.tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
 
   let receiptContext: ReceiptContext | undefined;
   if (receiptId !== null) {
@@ -84,6 +90,11 @@ export async function updateExpenseAction(
     };
   }
 
+  // tripId 來自表單，所以守門必須排在 zod 驗證之後——驗證前拿到的是未經
+  // 檢查的字串。驗證只保證格式，權限仍然要問
+  const guard = await guardAction(parsed.data.tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
+
   try {
     await updateExpense(expenseId, parsed.data);
   } catch (error) {
@@ -100,6 +111,9 @@ export async function deleteExpenseAction(
   _prevState: ActionState,
   _formData: FormData,
 ): Promise<ActionState> {
+  const guard = await guardAction(tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
+
   try {
     await deleteExpense(tripId, expenseId);
   } catch (error) {

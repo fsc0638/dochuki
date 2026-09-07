@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { loadTrip } from "@/lib/trips/load";
 
@@ -10,6 +11,7 @@ export default async function ReportsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  await guardPage(id, "VIEWER");
   const trip = await loadTrip(id);
   if (trip === null) notFound();
 

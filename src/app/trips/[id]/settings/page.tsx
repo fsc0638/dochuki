@@ -1,8 +1,12 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { updateTripAction } from "@/app/trips/actions";
 import { TripForm } from "@/components/trip/TripForm";
 import { loadTrip } from "@/lib/trips/load";
+
+// 依登入者的權限決定內容，不能被靜態化
+export const dynamic = "force-dynamic";
 
 export default async function TripSettingsPage({
   params,
@@ -10,6 +14,7 @@ export default async function TripSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  await guardPage(id, "OWNER");
   const trip = await loadTrip(id);
   if (trip === null) notFound();
 

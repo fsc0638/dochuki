@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { InviteManager } from "@/components/trip/InviteManager";
 import { MemberManager } from "@/components/trip/MemberManager";
@@ -16,6 +17,7 @@ export default async function TripMembersPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  await guardPage(id, "VIEWER");
   const trip = await loadTrip(id);
   if (trip === null) notFound();
 

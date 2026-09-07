@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { listTrips } from "@/lib/trips/load";
+import { guardSignedInPage } from "@/lib/auth/guard";
+import { listTripsForUser } from "@/lib/trips/load";
 import { Emoji } from "@/components/ui/Emoji";
 
 // 本頁沒有用到 params/searchParams 等動態 API，Next 會把它當靜態頁在 build
@@ -9,7 +10,9 @@ import { Emoji } from "@/components/ui/Emoji";
 export const dynamic = "force-dynamic";
 
 export default async function TripsPage() {
-  const trips = await listTrips();
+  // P7.4：只列出這個帳號有成員關係的行程
+  const user = await guardSignedInPage("/trips");
+  const trips = await listTripsForUser(user.id);
   const today = new Date();
 
   return (

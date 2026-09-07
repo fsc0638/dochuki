@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { deleteExpenseAction, updateExpenseAction } from "@/app/trips/[id]/expenses/actions";
 import { DeleteButton } from "@/components/ui/DeleteButton";
@@ -11,12 +12,16 @@ import {
   loadTrip,
 } from "@/lib/trips/load";
 
+// 依登入者的權限決定內容，不能被靜態化
+export const dynamic = "force-dynamic";
+
 export default async function EditExpensePage({
   params,
 }: {
   params: Promise<{ id: string; expenseId: string }>;
 }) {
   const { id, expenseId } = await params;
+  await guardPage(id, "EDITOR");
   const [trip, expense] = await Promise.all([
     loadTrip(id),
     loadExpenseForEdit(expenseId),

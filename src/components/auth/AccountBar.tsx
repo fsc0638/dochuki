@@ -1,4 +1,4 @@
-import { logoutAction } from "@/app/(auth)/actions";
+import { LogoutButton } from "@/components/auth/LogoutButton";
 import { getCurrentUser } from "@/lib/auth/current";
 
 /**
@@ -12,11 +12,7 @@ export async function AccountBar() {
   return (
     <div className="mx-auto flex w-full max-w-md items-center justify-between gap-3 px-6 pt-4 text-xs text-ink-muted">
       <span className="truncate">{user.displayName}</span>
-      <form action={logoutAction}>
-        <button type="submit" className="shrink-0 underline hover:text-ink-soft">
-          登出
-        </button>
-      </form>
+      <LogoutButton />
     </div>
   );
 }

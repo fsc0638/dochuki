@@ -1,5 +1,6 @@
 "use server";
 
+import { guardAction } from "@/lib/auth/guard";
 import { revalidatePath } from "next/cache";
 import { type ActionState, toErrorMessage } from "@/lib/actionState";
 import {
@@ -27,6 +28,10 @@ export async function createGroupAction(
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
     };
   }
+
+  // tripId 來自表單，守門排在 zod 驗證之後
+  const guard = await guardAction(parsed.data.tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
   try {
     await createGroup(parsed.data);
   } catch (error) {
@@ -42,6 +47,9 @@ export async function deleteGroupAction(
   _prevState: ActionState,
   _formData: FormData,
 ): Promise<ActionState> {
+  const guard = await guardAction(tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
+
   try {
     await deleteGroup(tripId, groupId);
   } catch (error) {
@@ -62,6 +70,10 @@ export async function createMemberAction(
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
     };
   }
+
+  // tripId 來自表單，守門排在 zod 驗證之後
+  const guard = await guardAction(parsed.data.tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
   try {
     await createMember(parsed.data);
   } catch (error) {
@@ -83,6 +95,10 @@ export async function updateMemberAction(
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
     };
   }
+
+  // tripId 來自表單，守門排在 zod 驗證之後
+  const guard = await guardAction(parsed.data.tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
   try {
     await updateMember(memberId, parsed.data);
   } catch (error) {
@@ -98,6 +114,9 @@ export async function deleteMemberAction(
   _prevState: ActionState,
   _formData: FormData,
 ): Promise<ActionState> {
+  const guard = await guardAction(tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
+
   try {
     await deleteMember(tripId, memberId);
   } catch (error) {

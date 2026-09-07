@@ -26,6 +26,8 @@ function displayFields(payload: unknown): { description: string; amount: string;
 export function OutboxStatus({ tripId }: { tripId: string }) {
   const [items, setItems] = useState<OutboxExpenseRecord[]>([]);
   const [syncing, setSyncing] = useState(false);
+  // P7.4：401 代表 session 過期，項目仍在佇列裡，重新登入後就能送出
+  const [needsLogin, setNeedsLogin] = useState(false);
 
   async function refresh() {
     setItems(await listOutboxForTrip(tripId));
@@ -42,7 +44,8 @@ export function OutboxStatus({ tripId }: { tripId: string }) {
 
   async function handleRetry() {
     setSyncing(true);
-    await syncOutbox();
+    const result = await syncOutbox();
+    setNeedsLogin(result.needsLogin);
     await refresh();
     setSyncing(false);
   }
@@ -64,6 +67,15 @@ export function OutboxStatus({ tripId }: { tripId: string }) {
           {syncing ? "同步中…" : "立即重試"}
         </button>
       </div>
+      {needsLogin && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
+          登入已過期，這些紀錄還留著。
+          <a href="/login" className="ml-1 underline">
+            重新登入
+          </a>
+          後再按「立即重試」即可送出。
+        </p>
+      )}
       <ul className="flex flex-col gap-1">
         {items.map((item) => {
           const { description, amount, currency } = displayFields(item.payload);

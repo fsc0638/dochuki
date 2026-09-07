@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
+import { guardRoute, guardSignedInRoute } from "@/lib/auth/guard";
 import { prisma } from "@/lib/db";
 import { orchestrateParseReceipt } from "@/lib/parse/orchestrator";
 import { persistParseResult, receiptStorageDir } from "@/lib/receipts/write";
@@ -19,6 +20,13 @@ import { persistParseResult, receiptStorageDir } from "@/lib/receipts/write";
 const ACCEPTED_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // P7.4：**這支要優先守住**——它會呼叫 Gemini，沒守門等於任何人都能燒掉
+  // API 額度，是唯一一個被濫用會直接產生帳單的端點。先擋掉未登入，
+  // 再在拿到 tripId 之後檢查行程權限（見下方），順序不能顛倒：
+  // 解析 formData 本身就要讀取整份圖片，不該讓未登入的人觸發。
+  const signedIn = await guardSignedInRoute();
+  if (!signedIn.ok) return signedIn.response;
+
   const formData = await request.formData();
   const image = formData.get("image");
   const tripId = formData.get("tripId");
@@ -37,10 +45,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const trip = await prisma.trip.findUnique({ where: { id: tripId } });
-  if (trip === null) {
-    return NextResponse.json({ error: "行程不存在" }, { status: 404 });
-  }
+  // 拿到 tripId 之後才檢查得了行程層級的權限。要 EDITOR——上傳收據是
+  // 記帳動作的第一步，唯讀成員不該能觸發解析
+  const guard = await guardRoute(tripId, "EDITOR");
+  if (!guard.ok) return guard.response;
 
   const buffer = Buffer.from(await image.arrayBuffer());
   const dir = receiptStorageDir();

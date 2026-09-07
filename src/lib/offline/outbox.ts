@@ -25,6 +25,12 @@ export async function listOutboxForTrip(tripId: string): Promise<OutboxExpenseRe
 export interface SyncResult {
   succeeded: number;
   failed: number;
+  /**
+   * 伺服器回了 401：session 過期或已登出。項目**全部保留在佇列裡**，
+   * 使用者重新登入後再同步就會成功。呼叫端該顯示「請重新登入」，
+   * 而不是把它當成資料有問題（P7.4）。
+   */
+  needsLogin: boolean;
 }
 
 /**
@@ -50,6 +56,15 @@ export async function syncOutbox(): Promise<SyncResult> {
         succeeded++;
         continue;
       }
+
+      // P7.4：401 是「session 過期了」，**不是**這筆資料有問題。
+      // 這種情況要停止整輪同步——後面每一筆都會撞到同一件事，繼續打只是
+      // 白費請求；也不寫 lastError，那個欄位的語意是「這筆送不出去」，
+      // 用它來顯示「請重新登入」會讓使用者以為要去改資料。
+      if (response.status === 401) {
+        return { succeeded, failed, needsLogin: true };
+      }
+
       const body: unknown = await response.json().catch(() => null);
       const message =
         typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
@@ -64,7 +79,7 @@ export async function syncOutbox(): Promise<SyncResult> {
     }
   }
 
-  return { succeeded, failed };
+  return { succeeded, failed, needsLogin: false };
 }
 
 interface SyncManagerRegistration extends ServiceWorkerRegistration {
@@ -90,4 +105,16 @@ async function requestBackgroundSync(): Promise<void> {
   } catch {
     // 不支援、逾時、或註冊失敗，交給 OutboxAutoSync 的 online／visibilitychange 保底機制
   }
+}
+
+/**
+ * 清空整個待送佇列（P7.4）。
+ *
+ * 登出時必須呼叫：IndexedDB 是**依裝置**存的，不隨帳號切換。共用裝置上
+ * 前一個人未送出的支出若留著，下一個人登入後同步就會用他的身分把那些
+ * 帳送出去——記到錯的人頭上。寧可讓前一個人重打，也不能記錯帳。
+ */
+export async function clearOutbox(): Promise<void> {
+  const db = await getOfflineDb();
+  await db.clear(OUTBOX_STORE);
 }

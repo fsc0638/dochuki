@@ -46,8 +46,18 @@ function buildFixedRatesJson(
 
 // ---------------------------------------------------------------- Trip ----
 
+/**
+ * 建立行程。
+ *
+ * `ownerId` 是 P7.4 加的必要參數：建立者當場成為 OWNER，同一個交易內完成。
+ * 少了這一步，新建的行程會是「無主」狀態——守門上線後連建立者自己都進不去
+ * （既有行程當初是靠 `pnpm auth bootstrap` 收編的，新行程不能也要人工收編）。
+ *
+ * 型別上是必填而非選填，就是為了讓「忘記指定擁有者」變成編譯錯誤。
+ */
 export async function createTrip(
   input: TripFormInput,
+  ownerId: string,
 ): Promise<{ id: string }> {
   const trip = await prisma.trip.create({
     data: {
@@ -56,6 +66,7 @@ export async function createTrip(
       endDate: new Date(input.endDate),
       homeCurrency: input.homeCurrency,
       fixedRates: buildFixedRatesJson(input.fixedRates),
+      memberships: { create: { userId: ownerId, role: "OWNER" } },
     },
   });
   return { id: trip.id };

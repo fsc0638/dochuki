@@ -1,5 +1,6 @@
 "use server";
 
+import { guardAction } from "@/lib/auth/guard";
 import { revalidatePath } from "next/cache";
 import { type ActionState, toErrorMessage } from "@/lib/actionState";
 import {
@@ -25,6 +26,10 @@ export async function createFundAction(
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
     };
   }
+
+  // tripId 來自表單，守門排在驗證之後
+  const guard = await guardAction(parsed.data.tripId, "OWNER");
+  if (!guard.ok) return { error: guard.message };
   try {
     await createFund(parsed.data);
   } catch (error) {
@@ -39,6 +44,9 @@ export async function createFundContributionAction(
   _prevState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const guard = await guardAction(tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
+
   const parsed = FundContributionFormSchema.safeParse(parseFundContributionFormData(formData));
   if (!parsed.success) {
     return {
@@ -61,6 +69,9 @@ export async function deleteFundContributionAction(
   _prevState: ActionState,
   _formData: FormData,
 ): Promise<ActionState> {
+  const guard = await guardAction(tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
+
   try {
     await deleteFundContribution(tripId, entryId);
   } catch (error) {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { deleteFundContributionAction } from "@/app/trips/[id]/funds/actions";
 import { DeleteButton } from "@/components/ui/DeleteButton";
@@ -14,6 +15,7 @@ export default async function FundPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  await guardPage(id, "VIEWER");
   const [trip, fund] = await Promise.all([loadTrip(id), loadFund(id)]);
   if (trip === null) notFound();
 

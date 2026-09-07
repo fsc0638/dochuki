@@ -279,7 +279,7 @@ session 過期回的 401 會被歸類成「這筆資料有問題」。應該把 
 | **P7.1** ✅ | 見下方「P7.1 落地紀錄」 | 完成 2026-09-07：`pnpm auth` 四個子指令實測通過，241 測試全綠 |
 | **P7.2** ✅ | 見下方「P7.2 落地紀錄」 | 完成 2026-09-07：瀏覽器實測註冊／登入／登出／節流／轉址防護全通過 |
 | **P7.3** ✅ | 見下方「P7.3 落地紀錄」 | 完成 2026-09-07：瀏覽器實測發券→認領→看到自己的分攤→撤銷全通過 |
-| **P7.4** | 31 個進出口逐一守門、列舉測試、離線重放 401、登出清佇列 | 列舉測試全綠；用 A 帳號無法讀寫 B 的行程 |
+| **P7.4** ✅ | 見下方「P7.4 落地紀錄」 | 完成 2026-09-07：列舉測試 25 條全綠；A 帳號對 B 的行程 11 條路徑全部 404 |
 | **P7.5** | 反向代理＋TLS＋OCI Security List 開 80/443 | 手機用真實網域連得到 |
 
 P7.5 正好接上 `CLOUD_SETUP.md` 裡卡住的地方。**P7.4 沒有全綠之前不要做 P7.5**，
@@ -554,6 +554,82 @@ P7.3 只先用它守住邀請這一區。發券等於授予權限，不能等 P7
 `inviteProblemMessage()`（同步的純函式）放在 actions 檔裡，整個模組在編譯期
 就失敗，畫面是 500、訊息是「Server Actions must be async functions」。
 搬到 `src/lib/auth/inviteMessages.ts` 即可。
+
+## P7.4 落地紀錄（2026-09-07 完成）
+
+### 三種呼叫端要三種回應形式
+
+`src/lib/auth/guard.ts` 提供五支，不硬湊成一支——因為「沒權限」的正確回應
+本來就不一樣：
+
+| 函式 | 用在 | 沒權限時 |
+|---|---|---|
+| `guardPage` | 頁面（RSC） | 未登入導去登入頁；登入了但不是成員 → `notFound()` |
+| `guardSignedInPage` | 只需登入的頁面 | 導去登入頁 |
+| `guardAction` | Server Action | 回 `ActionState` 形狀的錯誤，**不丟例外** |
+| `guardRoute` | Route Handler | **未登入 401、沒權限 404** |
+| `guardSignedInRoute` | 只需登入的 route | 401 |
+
+`guardRoute` 把 401 與 404 分開是刻意的：離線佇列補送需要分辨「session 過期，
+重新登入就好」與「這筆本來就不該送」，前者要保留在佇列裡，後者不該無限重試。
+
+### tripId 從哪裡來，決定守門放在哪一行
+
+有六支 action 的 `tripId` 來自**表單**而不是參數（`createExpenseAction`、
+`updateExpenseAction`、`createGroupAction`、`createMemberAction`、
+`updateMemberAction`、`createFundAction`）。這些的守門**必須排在 zod 驗證
+之後**——驗證前拿到的是未經檢查的字串。第一版批次插入時全部放在函式開頭，
+`pnpm typecheck` 當場抓出 `Cannot find name 'tripId'`，是型別系統幫忙擋下的。
+
+### 兩處改成「忘記就編譯錯誤」
+
+- `listTrips()` → **`listTripsForUser(userId)`**，userId 是必填。P7.1 留的是
+  可選的 ids 過濾（接縫），P7.4 收緊成必填，忘記過濾現在是編譯錯誤而不是
+  安靜的資料外洩。
+- `createTrip(input)` → **`createTrip(input, ownerId)`**，ownerId 必填。
+  建立者在同一個交易內成為 OWNER；少了這步，新建的行程會是無主狀態，
+  守門上線後連建立者自己都進不去。
+
+### 離線佇列的兩個修正
+
+- **401 停止整輪同步**並回報 `needsLogin`，項目全部保留、**不寫 `lastError`**
+  ——那個欄位的語意是「這筆送不出去」，拿它顯示「請重新登入」會讓使用者
+  以為要去改資料。後面每一筆都會撞到同一件事，繼續打只是白費請求。
+- **登出清空佇列**。IndexedDB 是依裝置存的、不隨帳號切換；共用裝置上前一個
+  人未送出的支出若留著，下一個人登入後同步會用**他的身分**把那些帳送出去，
+  記到錯的人頭上。清除在 client 端做（Server Action 碰不到 IndexedDB），
+  清除失敗也照樣登出——把人留在已登入狀態更糟。
+
+### 列舉測試
+
+`tests/auth.gating.test.ts` 靜態掃描 `src/app` 底下所有 page/route/actions，
+斷言每個檔案都引用了守門函式。**新增檔案時「檔案數量」那條會先亮**，逼人
+回來決定它該守門還是進 `PUBLIC` 清單——讓「這個頁面不需要登入」變成一個
+要動手寫下來的決定，而不是預設值。
+
+擋不住「引用了但沒真的呼叫」，但擋得住最常見的失敗模式：新增一個檔案、
+完全忘記這件事。行為層面的驗證在 `auth.access.test.ts` 與瀏覽器實測。
+
+注意單位：本文件說的「31 個進出口」是**函式層級**（5 route ＋ 14 action ＋
+12 頁面），檔案數是 28（22 個守門 ＋ 6 個刻意公開）。
+
+### 驗證
+
+- `pnpm lint` / `typecheck` / `build` 全過
+- `pnpm test` **301 passed**（新增 34 條：列舉 25、離線 401 與清佇列 3、
+  其餘為既有測試補上新形狀），`pnpm test regression` 17/17 不變
+- **跨帳號隔離實測**（兩個帳號各有一個行程）：
+  - 未登入打匯出 API 與離線補送 → 皆 401
+  - A 登入後行程列表**只列出自己的**
+  - A 打 B 的行程共 11 條路徑（8 個頁面 ＋ 3 個匯出 API）→ **全部 404**
+  - A 對 B 的行程送出支出、上傳收據 → 皆 404，訊息一律「行程不存在」，
+    不洩漏存在性
+  - A 對自己的行程 5 條路徑 → 全部 200，正常功能未被誤擋
+- **角色分級實測**（把 A 加進 B 的行程當 VIEWER）：`/trips/B`、`/reports`、
+  `/settlement`、匯出 CSV → 200；`/expenses/new`、`/receipts/new`（需 EDITOR）
+  與 `/settings`（需 OWNER）→ 404；VIEWER 打離線補送與收據解析端點 → 404
+
+測試資料已全部還原。
 
 ## 尚未裁示的事項
 

@@ -1,5 +1,6 @@
 "use server";
 
+import { guardAction } from "@/lib/auth/guard";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
@@ -23,6 +24,9 @@ export async function reparseReceiptAction(
   _prevState: ActionState,
   _formData: FormData,
 ): Promise<ActionState> {
+  const guard = await guardAction(tripId, "EDITOR");
+  if (!guard.ok) return { error: guard.message };
+
   let imagePath: string;
   try {
     // P7.0：帶上 tripId 一起比對，否則拿別的行程的 receiptId 也能觸發

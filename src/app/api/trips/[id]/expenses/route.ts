@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { toErrorMessage } from "@/lib/actionState";
+import { guardRoute } from "@/lib/auth/guard";
 import { ExpenseFormSchema } from "@/lib/schemas/expense";
 import { createExpense } from "@/lib/trips/write";
 
@@ -18,6 +19,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const { id } = await params;
+  // P7.4：守門放在最前面。**未登入回 401、沒權限回 404**，兩者分開是為了讓
+  // 離線佇列能分辨「session 過期，重新登入就好」與「這筆本來就不該送」——
+  // 前者要保留在佇列裡，後者不該無限重試（見 src/lib/offline/outbox.ts）
+  const guard = await guardRoute(id, "EDITOR");
+  if (!guard.ok) return guard.response;
+
   const body: unknown = await request.json().catch(() => null);
   if (body === null || typeof body !== "object") {
     return NextResponse.json({ error: "請求格式錯誤" }, { status: 400 });

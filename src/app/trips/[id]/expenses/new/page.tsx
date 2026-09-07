@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { createExpenseAction } from "@/app/trips/[id]/expenses/actions";
 import { reparseReceiptAction } from "@/app/trips/[id]/receipts/actions";
@@ -48,6 +49,9 @@ function receiptToInitial(
   };
 }
 
+// 依登入者的權限決定內容，不能被靜態化
+export const dynamic = "force-dynamic";
+
 export default async function NewExpensePage({
   params,
   searchParams,
@@ -56,6 +60,7 @@ export default async function NewExpensePage({
   searchParams: Promise<{ receiptId?: string; takenAt?: string }>;
 }) {
   const { id } = await params;
+  await guardPage(id, "EDITOR");
   const { receiptId, takenAt } = await searchParams;
   const trip = await loadTrip(id);
   if (trip === null) notFound();

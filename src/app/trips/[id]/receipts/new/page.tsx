@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { ReceiptCapture } from "@/components/expense/ReceiptCapture";
 import { loadTrip } from "@/lib/trips/load";
+
+// 依登入者的權限決定內容，不能被靜態化
+export const dynamic = "force-dynamic";
 
 export default async function NewReceiptPage({
   params,
@@ -9,6 +13,7 @@ export default async function NewReceiptPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  await guardPage(id, "EDITOR");
   const trip = await loadTrip(id);
   if (trip === null) notFound();
 

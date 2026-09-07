@@ -10,6 +10,7 @@ import {
   loadMemberTotals,
   loadTrip,
 } from "@/lib/trips/load";
+import { createPasswordUser } from "@/lib/auth/users";
 import {
   createExpense,
   createFund,
@@ -42,7 +43,32 @@ import { loadReceipt } from "@/lib/receipts/load";
  * 不觸碰 seed 進去的 trip-niigata-2026，避免弄髒既有的迴歸驗證資料。
  */
 
+/**
+ * 測試用的擁有者帳號。P7.4 之後 createTrip 必須指定 OWNER，
+ * 否則新行程會是無主狀態、守門一上線連建立者都進不去。
+ */
+let testOwnerId: string | null = null;
+
+async function ensureTestOwner(): Promise<string> {
+  if (testOwnerId !== null) return testOwnerId;
+  const existing = await prisma.user.findUnique({
+    where: { email: "trips-write@test.invalid" },
+    select: { id: true },
+  });
+  testOwnerId =
+    existing?.id ??
+    (
+      await createPasswordUser({
+        email: "trips-write@test.invalid",
+        password: "a-very-good-password",
+        displayName: "寫入層測試擁有者",
+      })
+    ).id;
+  return testOwnerId;
+}
+
 async function purgeTrip(tripId: string): Promise<void> {
+  await prisma.tripMembership.deleteMany({ where: { tripId } });
   // Receipt 要先清：P7.0 之後 Trip→Receipt 是 ON DELETE RESTRICT，留著沒綁
   // 支出的收據會擋住整個行程刪不掉
   await prisma.receipt.deleteMany({ where: { tripId } });
@@ -70,7 +96,7 @@ describe("trips/write · trips/load", () => {
       endDate: "2026-09-03",
       homeCurrency: "TWD",
       fixedRates: [{ currency: "JPY", rate: "0.25" }],
-    });
+    }, await ensureTestOwner());
     tripId = trip.id;
 
     const group = await createGroup({ tripId, name: "測試組" });
@@ -846,7 +872,7 @@ describe("trips/write · trips/load", () => {
         endDate: "2026-10-02",
         homeCurrency: "TWD",
         fixedRates: [],
-      });
+      }, await ensureTestOwner());
       const otherMember = await createMember({ tripId: otherTrip.id, name: "獨行", groupId: null });
 
       await expect(
@@ -895,14 +921,14 @@ describe("P7.0 · 跨行程存取一律拒絕", () => {
       endDate: "2026-11-03",
       homeCurrency: "TWD",
       fixedRates: [],
-    });
+    }, await ensureTestOwner());
     const b = await createTrip({
       name: "P7.0 行程B",
       startDate: "2026-11-01",
       endDate: "2026-11-03",
       homeCurrency: "TWD",
       fixedRates: [],
-    });
+    }, await ensureTestOwner());
     tripA = a.id;
     tripB = b.id;
     groupA = (await createGroup({ tripId: tripA, name: "A的組別" })).id;

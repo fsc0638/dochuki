@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { guardPage } from "@/lib/auth/guard";
 import { notFound } from "next/navigation";
 import { ExpenseFilters } from "@/components/expense/ExpenseFilters";
 import { ExpenseList } from "@/components/expense/ExpenseList";
@@ -12,6 +13,9 @@ function toOptionalString(value: string | string[] | undefined): string | undefi
   return value;
 }
 
+// 依登入者的權限決定內容，不能被靜態化
+export const dynamic = "force-dynamic";
+
 export default async function TripOverviewPage({
   params,
   searchParams,
@@ -20,6 +24,7 @@ export default async function TripOverviewPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  await guardPage(id, "VIEWER");
   const query = await searchParams;
 
   const trip = await loadTrip(id);
