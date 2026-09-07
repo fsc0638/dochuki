@@ -78,17 +78,46 @@ for i in $(seq 1 30); do
 done
 
 # --- 5. 健康檢查 -----------------------------------------------------------
+#
+# P7.2 之前這裡只檢查 `/trips` 是否回 200。帳號系統上線後未登入的請求會被
+# middleware 導向登入頁，正確行為變成 307——舊的檢查於是把一次完全成功的
+# 部署判成失敗（2026-09-07 實際發生過）。
+#
+# 現在分兩個條件：
+#   /login  必須是 200——這是公開頁，能渲染就代表 app 真的活著、沒有 500
+#   /trips  必須是 200 或 30x——未登入時導向登入頁是對的，只有 5xx 才算壞
+#
+# 資料庫連得通與否不靠 HTTP 驗證：上一步的 `prisma migrate deploy` 若連不上
+# 資料庫就已經失敗退出了，這裡不必重複。
 for i in $(seq 1 30); do
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$PORT/trips" || true)"
-  if [ "$CODE" = "200" ]; then
-    log "健康檢查通過（/trips 回 200）"
+  LOGIN_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$PORT/login" || true)"
+  TRIPS_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$PORT/trips" || true)"
+
+  case "$TRIPS_CODE" in
+    200 | 30?) TRIPS_OK=yes ;;
+    *) TRIPS_OK=no ;;
+  esac
+
+  if [ "$LOGIN_CODE" = "200" ] && [ "$TRIPS_OK" = yes ]; then
+    log "健康檢查通過（/login=$LOGIN_CODE、/trips=$TRIPS_CODE）"
     echo "$TARGET" > "$LOGDIR/deployed.sha"
+
+    # 部署成功了才把 ~/deploy 底下的腳本更新成這個版本。放在成功之後是刻意的：
+    # 部署失敗時保留上一版能跑的腳本，不會因為新版腳本本身有問題而讓下一次
+    # 部署也一起壞掉。sync.sh 一併更新，它跟這支是同一組。
+    #
+    # 用 `|| true` 是因為腳本正在被自己執行中，某些檔案系統上覆寫會失敗——
+    # 更新腳本是錦上添花，不該讓一次成功的部署被判成失敗。
+    install -m 755 "$WORKTREE/scripts/deploy/deploy-prod.sh" "$LOGDIR/deploy-prod.sh.next" 2>/dev/null \
+      && mv "$LOGDIR/deploy-prod.sh.next" "$LOGDIR/deploy-prod.sh" 2>/dev/null || true
+    install -m 755 "$WORKTREE/scripts/deploy/sync.sh" "$LOGDIR/sync.sh" 2>/dev/null || true
+
     log "=== 部署完成 ${TARGET:0:7} ==="
     exit 0
   fi
   sleep 5
 done
 
-log "!! 健康檢查失敗（最後一次 http_code=$CODE），容器可能起來了但服務不正常"
+log "!! 健康檢查失敗（/login=$LOGIN_CODE、/trips=$TRIPS_CODE），容器可能起來了但服務不正常"
 log "   查看紀錄：docker compose -p $PROJECT logs --tail=100 app"
 exit 1
