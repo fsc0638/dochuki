@@ -429,3 +429,50 @@ ssh -N -L 3100:localhost:3100 dochuki
 網域、TLS 憑證與反向代理、以及**至少一層存取保護**。P2 裁示暫不做帳號系統，
 沒有這層保護就開 Security List，等於誰有網址誰就能看／改行程與金額資料。
 這是 `docker-compose.prod.yml` 把 app 綁在 loopback 而不是 `0.0.0.0` 的原因。
+
+### 驗收紀錄（2026-09-07）
+
+首次部署 `dfa04fb`：建 `dochuki-prod-app`（Next.js＋Chromium）與
+`dochuki-prod-ocr-sidecar`（PaddleOCR）兩個映像約 5 分鐘，兩支 migration
+（`20260824053527_init`、`20260901120000_remove_member_weight`）套用成功，
+健康檢查通過。
+
+**自動同步**（timer 那條路）：
+
+| 時間 | 事件 |
+|---|---|
+| 14:19:53 | Mac mini `git push origin main`（`90ec6d9`） |
+| 14:19:54 | VM 的 `sync.sh` 抓到 github/main 前進，觸發部署 |
+| 14:19:59 | 部署完成，健康檢查通過；開發樹也快轉到同一個 commit |
+
+**立即部署**（hook 那條路）：14:20:34 `git push prod main`（`d9153b3`），
+14:20:38 部署完成，前後 4 秒，push 的輸出裡直接看得到部署過程。
+
+**隔離驗證**：
+
+```
+dochuki-prod-app           127.0.0.1:3100->3000/tcp
+dochuki-prod-db            5432/tcp（不對主機開）
+dochuki-prod-ocr-sidecar   8000/tcp（不對主機開）
+dochuki-db                 0.0.0.0:5442->5432/tcp   ← 開發那組，沒被動到
+```
+
+volume 也是分開的：`dochuki-prod_dochuki-pgdata` 與 `dochuki_dochuki-pgdata`
+是兩份資料。整個建置與部署期間，開發站 `localhost:3000` 全程回 200。
+
+**正式站的 DB 是全新的空庫**——只套 migration、不灌 seed。開發環境那份新潟團
+fixture 不會跑過去，這對正式站是對的。真要把資料搬過去是另一件事，得自己
+`pg_dump` / `pg_restore`。
+
+**其他設備要接立即部署那條路**：
+
+```bash
+git remote add prod dochuki:/home/ubuntu/dochuki.git
+```
+
+用 `~/.ssh/config` 的 Host 別名，不要寫 `ssh://ubuntu@141.147.176.204/...`——
+`ssh://` 開頭的 URL 不會套用 config 裡的 `IdentityFile`，會因為找不到金鑰而
+`Permission denied`（這次實際踩到）。Windows 那台的 config 若沒有 `dochuki`
+這個 Host，補一個再加 remote。
+
+只用自動同步那條路的設備什麼都不用設定，照常 push GitHub 即可。

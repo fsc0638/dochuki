@@ -72,6 +72,11 @@ docker compose down -v
 
 ## 部署
 
+> **雲端 VM 上已經有自動化的部署管線**，不必手打下面這些指令：push 到 GitHub
+> 之後兩分鐘內會自動同步並重新部署，或 `git push prod main` 立刻部署。
+> 機制與驗收紀錄見 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md) 的「自動同步與
+> 正式站部署」章節。以下是這套管線底層實際執行的內容，也是單機手動部署的做法。
+
 一鍵起全套（app + db）容器化跑法，適合單機自架（例如雲端 VM）。
 
 ```bash
