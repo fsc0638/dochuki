@@ -182,6 +182,7 @@ sudo certbot renew --dry-run   # 確認 90 天自動 renew 沒問題
 - [x] Phase D：SSH tunnel 連線驗證可用——2026-08-25 瀏覽器實測 `localhost:3001/trips`
       正確顯示新潟團 seed 資料，Gemini 金鑰、DB、tunnel 全線打通
 - [x] macOS 第二台用戶端接入（2026-09-06，`ssh dochuki` 直連實測通過，見文末實錄）
+- [x] macOS 第三台用戶端接入（2026-09-07，Mac mini，走 Bastion 補金鑰後 `ssh dochuki` 直連實測通過，見文末實錄）
 
 **Windows 用戶端慣用連線方式**（兩個視窗）：
 ```powershell
@@ -299,14 +300,15 @@ ssh dochuki 'export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; pnpm -v'
 ### 完成後的狀態
 
 - VM `~/.ssh/authorized_keys`：**刻意留空**（只有說明註解）——2026-09-07 起
-- VM `~/.ssh/authorized_keys2`：**兩把金鑰都在這裡**
-  - `SHA256:fYGOs92e…` `oracle devbot mac`（macOS）
+- VM `~/.ssh/authorized_keys2`：**三把金鑰都在這裡**
+  - `SHA256:fYGOs92e…` `oracle devbot mac`（macOS，FSC-MacBook-Pro）
   - `SHA256:sW5+Ggcp…` `oracle devbot tokyo`（Windows）
+  - `SHA256:kl0L5YY1…` `oracle devbot macmini`（macOS，Mac mini，2026-09-07 加入）
   - 驗證：`ssh -v` 顯示認證來源為 `/home/ubuntu/.ssh/authorized_keys2`，
     且 `ssh-keygen -lf ~/.ssh/authorized_keys` 金鑰數為 0
 - Mac 直連實測通過：`ssh dochuki` → `ubuntu@fsc0638-dev-vcn`，Ubuntu 24.04.4 LTS / aarch64
 - Bastion `Bastion202609061805`：session 用完即刪，**Bastion 本體依使用者裁示保留**（2026-09-06），當作下次換機器／弄丟金鑰時的救援入口，不必重走一輪。
-  服務免費、不對外開任何 port。**但 CIDR allowlist 綁死當時的對外 IP `114.43.58.161/32`——換到咖啡廳或手機熱點就連不上，要回 Console 改這一欄**
+  服務免費、不對外開任何 port。**但 CIDR allowlist 綁死申請當下的對外 IP——換到咖啡廳或手機熱點就連不上，要回 Console 改這一欄**。2026-09-07 已改為兩筆並存：`114.43.58.161/32`（2026-09-06 那次）與 `59.124.107.139/32`（Mac mini 那次）
 
 ### 要再加第三台用戶端時
 
@@ -314,3 +316,37 @@ ssh dochuki 'export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; pnpm -v'
 ```bash
 ssh dochuki "cat >> ~/.ssh/authorized_keys2" < ~/.ssh/新機器的公鑰.pub
 ```
+
+## Mac mini（第三台用戶端）接入實錄（2026-09-07）
+
+### 情境
+
+新的 Mac mini（macOS 26.4）上什麼都沒有：沒有 repo、沒有 `~/.ssh/oracle_devbot`、
+`~/.ssh/config` 只有 OrbStack 的 Include。Windows 那台當下不在手邊，所以走 Bastion。
+
+### 實際路徑
+
+1. `gh repo list` 找到 `fsc0638/dochuki`，clone 到 `~/Dev/dochuki`
+2. 本機產生新金鑰 `ssh-keygen -t ed25519 -C "oracle devbot macmini" -f ~/.ssh/oracle_devbot`
+3. `~/.ssh/config` 附加 `dochuki` / `dochuki-tunnel` 兩個 Host（原檔備份為 `config.bak.20260907`）
+4. OCI Console → Bastion → Edit：CIDR allowlist **新增** `59.124.107.139/32`，
+   保留原有的 `114.43.58.161/32`（兩筆並存，沒有覆蓋）
+5. Sessions → Create session：Managed SSH／username `ubuntu`／instance `fsc0638-dev`／
+   Paste SSH key 貼上新公鑰。**建立耗時約 70 秒**，中途一直停在 `Creating`，是正常的，不要重按
+6. 用 View SSH command 取得的 ProxyCommand 連進去，把公鑰附加到 `authorized_keys2`
+7. 刪除 Bastion session，改測直連 `ssh dochuki` → 通過
+
+### 驗證紀錄
+
+- `authorized_keys2` 三把金鑰、`authorized_keys` 金鑰數 0（維持 2026-09-07 的刻意留空）
+- Bastion session 刪除後 `ssh dochuki` 仍可直連 → 確認金鑰是永久的，不依賴 Bastion
+- tunnel 端到端：`ssh -f -N dochuki-tunnel` 後 `curl http://localhost:3000/trips`
+  取回 `http_code=200`、標題 `道中記 Dōchūki`
+- VM 現況：`main` 與 origin 同步、`db` 容器 healthy、tmux `dev` session 裡 `pnpm dev` 一直跑著
+
+### 這次確認的事
+
+- **VM 的 22 埠對外仍開著**，所以「連不上」多半只是金鑰不在，不是網路問題。
+  下次遇到先用 `nc -z <IP> 22` 分辨，是金鑰問題就別急著開 Bastion
+- 動到 `authorized_keys2` 前先 `cp` 一份備份（這次留下 `authorized_keys2.bak.20260907`）
+- macOS 上沒有 `timeout` 指令，要用 `ssh -o ConnectTimeout=N` 代替
