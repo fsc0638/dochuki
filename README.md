@@ -119,8 +119,11 @@ icons），頁面與帳務資料一律不快取，帳務金額永遠讀最新的
 正式環境（`NODE_ENV=production`）註冊，`pnpm dev` 不會註冊——用上面容器化部署起
 來的網址（不是 `pnpm dev`）搭配 Chrome DevTools 的 Application／Lighthouse 面板
 確認 manifest 與 Service Worker 皆正確註冊。手機瀏覽器要能跳出「加入主畫面」，
-需要透過 HTTPS 或至少同網段存取——這個服務本身沒有另外處理網域／SSL，請依部署
-環境自行加一層反向代理（nginx／Caddy／Cloudflare Tunnel 皆可）。
+需要透過 HTTPS 存取。**雲端 VM 上已經有現成的一套**：Caddy 反向代理＋
+Let's Encrypt 自動憑證，設定與可重複執行的安裝腳本在 `scripts/deploy/Caddyfile`
+與 `scripts/deploy/install-caddy.sh`，做法與踩過的坑見
+[docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md)「對外公開網域＋HTTPS」章節。
+自架到別的環境時可沿用，或換成 nginx／Cloudflare Tunnel。
 
 **容器內 PDF 匯出**：Dockerfile 的 runtime 階段已內建 Chromium 與其系統依賴
 （`playwright install --with-deps chromium`），匯出 PDF 不需要額外設定。

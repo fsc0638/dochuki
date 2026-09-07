@@ -1,0 +1,32 @@
+# 道中記 正式站反向代理（P7.5）
+#
+# 網域用 sslip.io 的萬用 DNS：主機名裡編了 IP，公開 DNS 直接解析回這台 VM，
+# 不必註冊網域也不必自己架 DNS。Let's Encrypt 認這種網域，簽出來是真憑證，
+# 瀏覽器不會跳警告，PWA 也能正常安裝到手機主畫面。
+#
+# 換成自己的網域時：把下面那行主機名改掉、DNS 的 A 記錄指向 141.147.176.204，
+# 然後 `sudo systemctl reload caddy`。Caddy 會自動重新簽憑證，其餘不用動。
+
+141-147-176-204.sslip.io {
+	# 正式站的 app 只綁 127.0.0.1:3100（見 docker-compose.prod.yml），
+	# Caddy 跟它同在一台主機上所以連得到；外界永遠碰不到那個 port，
+	# 只能經過這裡。TLS 在這裡終止，往後端走本機迴路的明文。
+	reverse_proxy 127.0.0.1:3100
+
+	# Caddy 預設就會帶 X-Forwarded-Proto／For／Host，Next.js 靠它們知道
+	# 原始請求是 https，這裡不必額外設定。
+
+	encode zstd gzip
+
+	# 存取紀錄走 journald（Caddy 的預設），用 `journalctl -u caddy` 查。
+	#
+	# 原本想寫成 /var/log/caddy/access.log 的輪替檔案，但 Debian 套件的
+	# systemd unit 設了 ProtectSystem=full，/var 對這個服務是唯讀的，
+	# Caddy 會以 permission denied 拒絕載入設定（2026-09-07 實際踩到）。
+	# 要用檔案得再加一個 systemd override 開 ReadWritePaths，多一個要維護
+	# 的東西；journald 本來就會保存與輪替，直接用它。
+	#
+	# 不論寫到哪裡都**不記 query string 與 request body**——那裡可能出現
+	# 收據內容或金額，違反 CLAUDE.md「禁止把收據圖檔或解析結果寫進 log」。
+	# Caddy 預設就只記 method/path/status 這類中繼資料，不記 body。
+}

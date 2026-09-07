@@ -151,28 +151,92 @@ Ampere A1 是 **arm64** 架構，跟這台 Windows 機器（x64）不同，以�
 >    運作無誤。這一項程式面驗不出來：中文若沒嵌好，檔案一樣是合法的 2 頁 PDF、
 >    大小也相近，只有人眼看得出差別。
 
-## 之後才做：對外公開網域＋HTTPS（P5 階段，現在不要做）
+## 對外公開網域＋HTTPS（2026-09-07 完成）
 
-同事附件的指南有一大段是「申請網域（ClouDNS）→ Certbot／Let's Encrypt 簽 SSL
-→ OCI Security List 開 80/443 → VM 內 ufw／iptables 也開 80/443 → nginx 反代」。
-這套流程本身沒問題，記錄在這裡備用，**但現在先不要做**：
+**對外網址：https://141-147-176-204.sslip.io**
 
-- 現在的目標是「遠端開發機」，只走 SSH tunnel，不需要對外開任何 port
-- P2 裁示「暫不做帳號系統」——這台機器一旦掛上網域對外開放，任何人拿到網址
-  就能看/改行程資料，公開前要先補一層存取保護（帳號或至少 Basic Auth）
-- 這件事對應的是 PROMPTS.md 的 **P5「PWA 與收尾」**，等 P4 報表做完、真的要讓
-  手機在旅途中直接連時再回頭做
+原本這一段寫的是「現在不要做」，理由是「P2 裁示暫不做帳號系統，這台機器一旦
+掛上網域對外開放，任何人拿到網址就能看／改行程資料」。帳號系統在 P7 做完了
+（見 `docs/AUTH_PLAN.md`），前置條件才算滿足。
 
-備用清單（P5 再展開執行）：
-```bash
-sudo apt install certbot python3-certbot-nginx netfilter-persistent iptables-persistent -y
-sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
-sudo certbot renew --dry-run   # 確認 90 天自動 renew 沒問題
-```
-搭配：OCI Security List 開 TCP 80/443（source 0.0.0.0/0）＋ `sudo ufw allow 'Nginx Full'`
-＋ 檢查 VM 內 iptables 沒有把 80/443 擋下來（`sudo iptables -L -n -v`，卡住的話
-`sudo iptables -I INPUT 1 -p tcp --dport <port> -j ACCEPT` 後
-`sudo netfilter-persistent save` 存檔）。
+### 網域用 sslip.io，不必註冊也不必架 DNS
+
+`141-147-176-204.sslip.io` 是公開的萬用 DNS 服務：主機名裡編了 IP，解析直接
+回那個 IP。Let's Encrypt 認這種網域，簽出來是**真憑證**，瀏覽器不跳警告、
+PWA 也能正常安裝到手機主畫面。免費、不必註冊任何帳號。
+
+代價只有網址難看難記。**換成自己的網域**時：改 `scripts/deploy/Caddyfile`
+的主機名、DNS 的 A 記錄指向 `141.147.176.204`，重跑 `install-caddy.sh`，
+憑證會自動重簽，其餘都不用動。
+
+### 用 Caddy 而不是 nginx + certbot
+
+Caddy 內建自動 HTTPS：設定檔就是「主機名 + reverse_proxy 目標」兩行，
+憑證申請與續簽都自己來。nginx 那條路要另外裝 certbot、設 renew hook、
+處理 challenge 路徑，多好幾個要維護的東西，換來的功能這裡用不到。
+
+設定與安裝腳本都在版控裡：`scripts/deploy/Caddyfile`、
+`scripts/deploy/install-caddy.sh`（可重複執行）。
+
+### 實際做的三件事
+
+1. **OCI Security List** 加兩條 ingress：TCP 80 與 443，來源 `0.0.0.0/0`
+2. **裝 Caddy 並套設定**，reverse_proxy 指向 `127.0.0.1:3100`
+3. Caddy 完成 Let's Encrypt 的 HTTP-01 驗證，取得憑證
+
+**VM 自己的防火牆不必動**——實測 `ufw` 是 inactive、nftables 只有 Docker 的
+NAT 規則、iptables INPUT policy 是 ACCEPT 且無規則。舊版指南裡那段
+「VM 內 ufw／iptables 也要開 80/443」對這台機器是多餘的。
+
+### 架構上外界只碰得到 Caddy
+
+正式站的 app 仍然**只綁 `127.0.0.1:3100`**（`docker-compose.prod.yml` 沒有
+改動），資料庫完全不對主機開埠。所有外部流量都必須經過反向代理，TLS 在
+Caddy 終止，往後端走本機迴路。
+
+### 驗證（2026-09-07）
+
+從 VM 走公網回來測（不加 `-k`，用系統信任鏈驗證）：
+
+| 項目 | 結果 |
+|---|---|
+| 憑證簽發者 | `C=US, O=Let's Encrypt, CN=YE1`，有效至 2026-12-06 |
+| `/login`、`/signup` | 200 |
+| `/trips`（未登入） | 307 導向登入頁——守門正常 |
+| `http://` | 308 自動轉 HTTPS |
+| `/sw.js`、`/manifest.json`、兩個 icon | 200，MIME 正確 |
+| 通訊協定 | HTTP/2，並廣告 HTTP/3 |
+
+### ⚠️ 本地網路有 TLS 攔檢，測試時別誤判
+
+從開發用的那台 Mac 測，拿到的憑證簽發者是 **Fortinet**（`CN=FG201FT922900466`）
+而不是 Let's Encrypt，`curl` 因為信任鏈驗不過而回 `000`，HTTP 則被回 403。
+**這不是伺服器的問題**，是該網路有防火牆設備在做 TLS 攔檢與過濾。
+
+實務影響：在那個網路下開這個網址可能被擋或跳憑證警告，**換到行動網路或
+家用網路就正常**。這也可能影響 PWA 安裝（需要有效的安全內容）。
+要驗證伺服器端到底對不對，從 VM 自己 `curl` 出去繞一圈最乾淨。
+
+### 安裝腳本的驗證別用「有沒有剛簽發憑證」當判準
+
+`install-caddy.sh` 第一版是去 journal 裡找 `certificate obtained successfully`
+來確認成功。第一次執行沒問題，**重跑就誤報失敗**——憑證早就有了，Caddy 不會
+再簽一次，自然找不到那行紀錄。
+
+改成直接 `curl https://<主機名>/login` 看是不是 200，第一次與重跑都準確，
+而且刻意**不加 `-k`**：要驗的正是憑證能不能通過系統信任鏈。這也是「冪等」
+該有的樣子——驗的是**目前狀態對不對**，不是**這次做了什麼**。
+
+### 踩到的坑
+
+Debian 的 Caddy 套件在 systemd unit 設了 `ProtectSystem=full`，`/var` 對這個
+服務是**唯讀**的。原本想把存取紀錄寫成 `/var/log/caddy/access.log` 的輪替檔案，
+Caddy 會以 `permission denied` 拒絕載入整份設定（`systemctl reload` 失敗但
+舊設定仍在跑，站台不會掛）。要用檔案得再加 systemd override 開
+`ReadWritePaths`，多一個要維護的東西——改用 journald，`journalctl -u caddy` 查。
+
+不論寫到哪裡都**不記 query string 與 request body**，那裡可能出現收據內容或
+金額，違反 CLAUDE.md「禁止把收據圖檔或解析結果寫進 log」。
 
 ## 進度追蹤
 
