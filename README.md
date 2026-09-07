@@ -154,4 +154,3 @@ dochuki/
 
 本專案因此置於 `C:\Users\kicl1\OneDrive\dev\dochuki`（純 ASCII，仍在 OneDrive 內正常同步）。搬移專案時請維持這個限制。
 
-<!-- 自動部署煙霧測試：2026-09-07 -->
