@@ -153,3 +153,5 @@ dochuki/
 已實測排除的因素：與 OneDrive 無關、與 pnpm 版本無關（10／11 皆然）、與 `MAX_PATH` 無關（`LongPathsEnabled=1`，同長度 ASCII 路徑正常）、與 Node 版本無關（同一個 Node 跑 `npm install` 完全正常）。唯一變因就是路徑中的非 ASCII 字元。
 
 本專案因此置於 `C:\Users\kicl1\OneDrive\dev\dochuki`（純 ASCII，仍在 OneDrive 內正常同步）。搬移專案時請維持這個限制。
+
+<!-- 自動部署煙霧測試：2026-09-07 -->
