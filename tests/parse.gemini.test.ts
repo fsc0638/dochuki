@@ -170,3 +170,104 @@ describe("parseReceipt · 兩次都失敗 → 降級為 null", () => {
     expect(mockGenerateContent).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * 2026-09-07 真實收據事故的迴歸測試。
+ *
+ * 第一張真實日文收據解析失敗，畫面只說「解析失敗」、容器日誌一片空白——
+ * 五條失敗路徑當時全部靜默 `return null`。最後是把原圖撈出來逐條重現，
+ * 才發現是 HTTP 429（pro 模型免費方案額度為零）。
+ *
+ * 這組測試釘住兩件事：
+ *   1. 每條失敗路徑都要留下**可診斷的原因**
+ *   2. 記錄內容只能有類別與代碼，**不得含收據內容或欄位值**
+ */
+describe("parseReceipt · 失敗原因必須留下紀錄（2026-09-07 事故）", () => {
+  beforeEach(() => {
+    mockGenerateContent.mockReset();
+    process.env.GEMINI_API_KEY = "test-key";
+  });
+
+  it("HTTP 429 額度為零：記下狀態碼與提示，並回 null", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mockGenerateContent.mockRejectedValue(
+      new Error(
+        'got status: 429. {"error":{"code":429,"status":"RESOURCE_EXHAUSTED",' +
+          '"message":"Quota exceeded for metric: ... limit: 0, model: gemini-3.1-pro-preview"}}',
+      ),
+    );
+
+    const result = await parseReceipt({ imageBase64: "xxx", mediaType: "image/jpeg" });
+    expect(result).toBeNull();
+
+    const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).toContain("stage=api");
+    expect(logged).toContain("httpStatus=429");
+    expect(logged).toContain("apiStatus=RESOURCE_EXHAUSTED");
+    // limit: 0 與「額度用完」是兩件事，必須分得出來
+    expect(logged).toContain("額度為零");
+    warn.mockRestore();
+  });
+
+  it("finishReason 不是 STOP：記下實際的 finishReason", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mockGenerateContent.mockResolvedValue({
+      candidates: [{ finishReason: "MAX_TOKENS" }],
+      text: "",
+    });
+
+    expect(await parseReceipt({ imageBase64: "x", mediaType: "image/jpeg" })).toBeNull();
+    const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    // MAX_TOKENS 要調 token 上限、SAFETY 是內容被擋，兩種處置不同，
+    // 記下來才分得出該做什麼
+    expect(logged).toContain("finishReason=MAX_TOKENS");
+    warn.mockRestore();
+  });
+
+  it("schema 驗證失敗：只記欄位路徑，不記欄位值", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mockGenerateContent.mockResolvedValue({
+      candidates: [{ finishReason: "STOP" }],
+      // total 型別錯誤，且帶一個容易辨識的店名——它絕不能出現在 log 裡
+      text: JSON.stringify({ ...VALID_OUTPUT, store: "機密店名XYZ", total: "not-a-number" }),
+    });
+
+    expect(await parseReceipt({ imageBase64: "x", mediaType: "image/jpeg" })).toBeNull();
+    const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).toContain("stage=schema");
+    expect(logged).toContain("total");
+    // CLAUDE.md：禁止把收據內容寫進 log
+    expect(logged).not.toContain("機密店名XYZ");
+    expect(logged).not.toContain("not-a-number");
+    warn.mockRestore();
+  });
+
+  it("回應不是合法 JSON：只記長度，不記內容", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mockGenerateContent.mockResolvedValue({
+      candidates: [{ finishReason: "STOP" }],
+      text: '{"store":"祕密商店","total',
+    });
+
+    expect(await parseReceipt({ imageBase64: "x", mediaType: "image/jpeg" })).toBeNull();
+    const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).toContain("stage=json");
+    expect(logged).toContain("responseLength=");
+    expect(logged).not.toContain("祕密商店");
+    warn.mockRestore();
+  });
+
+  it("安全機制擋下：記下 blockReason", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mockGenerateContent.mockResolvedValue({
+      promptFeedback: { blockReason: "SAFETY" },
+      candidates: [],
+    });
+
+    expect(await parseReceipt({ imageBase64: "x", mediaType: "image/jpeg" })).toBeNull();
+    const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).toContain("stage=blocked");
+    expect(logged).toContain("blockReason=SAFETY");
+    warn.mockRestore();
+  });
+});
