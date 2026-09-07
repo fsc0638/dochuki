@@ -1,0 +1,36 @@
+# 正式站專用的 compose 覆寫檔，與開發環境完全隔離。
+#
+# 隔離方式有三層：
+#   1. compose project name 用 `dochuki-prod`，volume 自動變成
+#      dochuki-prod_dochuki-pgdata 等，跟開發那組不是同一份資料
+#   2. container_name 全部改名，避免跟 docker-compose.yml 寫死的
+#      dochuki-db / dochuki-app 撞名（container_name 是全機唯一的，
+#      光靠 project name 分不開）
+#   3. 對外 port 分開：開發的 db 佔 5442、dev server 佔 3000，
+#      正式站的 app 走 3100 且只綁 loopback
+#
+# 不必手打，scripts/deploy/deploy-prod.sh 會自動帶上：
+#   docker compose -p dochuki-prod -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+services:
+  db:
+    container_name: dochuki-prod-db
+    # 正式站的 DB 不對主機開任何 port——app 走 compose 內部網路的 db:5432 就夠了。
+    # 開發那組的 5442 映射保持不動，兩邊各自獨立。`!reset` 是清掉繼承來的整個
+    # ports 清單，不是附加（compose 對 list 預設是合併，不覆蓋）。
+    ports: !reset []
+
+  ocr-sidecar:
+    container_name: dochuki-prod-ocr-sidecar
+
+  app:
+    container_name: dochuki-prod-app
+    # 開發那組是 unless-stopped；正式站用 always，VM 重開機後也會自己回來
+    restart: always
+    # **只綁 127.0.0.1**。P2 裁示暫不做帳號系統，這個服務沒有任何存取保護，
+    # 一旦綁 0.0.0.0 又剛好開了 OCI Security List，任何人拿到網址就能看／改
+    # 行程與金額資料。對外公開前要先補反向代理＋TLS＋至少一層存取保護，
+    # 見 docs/CLOUD_SETUP.md 的「對外公開網域＋HTTPS」章節。
+    # 現階段從本機用 SSH tunnel 轉 3100 就能驗收正式站。
+    ports: !override
+      - "127.0.0.1:${PROD_APP_PORT:-3100}:3000"

@@ -350,3 +350,82 @@ ssh dochuki "cat >> ~/.ssh/authorized_keys2" < ~/.ssh/新機器的公鑰.pub
   下次遇到先用 `nc -z <IP> 22` 分辨，是金鑰問題就別急著開 Bastion
 - 動到 `authorized_keys2` 前先 `cp` 一份備份（這次留下 `authorized_keys2.bak.20260907`）
 - macOS 上沒有 `timeout` 指令，要用 `ssh -o ConnectTimeout=N` 代替
+
+## 自動同步與正式站部署（2026-09-07 建立）
+
+兩個需求用同一套東西解決：各設備 push 之後 VM 要自動跟上，以及在 VM 上跑一個
+真正的正式站（不是 `pnpm dev`）。
+
+### 三棵樹，各司其職
+
+| 路徑 | 是什麼 | 誰會動它 |
+|---|---|---|
+| `~/dochuki` | 開發樹，tmux 裡的 `pnpm dev` 跑在這棵 | 人手動改；`sync.sh` 只在乾淨時快轉 |
+| `~/dochuki.git` | bare repo，部署的唯一權威 | `sync.sh` 從 GitHub 快轉；`git push prod` 直接寫入 |
+| `~/dochuki-prod` | 正式站工作樹，**沒有自己的 `.git`** | 只由 `deploy-prod.sh` 用 `checkout -f` 覆寫 |
+
+開發樹與正式站的容器、volume、port 全部分開，互不干擾：
+
+| | 開發 | 正式站 |
+|---|---|---|
+| compose project | `dochuki` | `dochuki-prod` |
+| 容器名 | `dochuki-db` | `dochuki-prod-db` / `-app` / `-ocr-sidecar` |
+| DB 資料 | `dochuki_dochuki-pgdata` | `dochuki-prod_dochuki-pgdata`（**另一份資料**） |
+| 對外 port | db 5442、dev server 3000 | app `127.0.0.1:3100`，db 不開 |
+
+### 兩個觸發途徑
+
+**自動（每 2 分鐘）**：`dochuki-sync.timer` → `sync.sh` → 從 GitHub 快轉 bare repo，
+有前進才呼叫 `deploy-prod.sh`。任何設備、任何作業系統，只要 push 上 GitHub 就會
+被帶進來，設備端不需要任何設定。
+
+**立即（不想等）**：本機加一個指向 VM bare repo 的 remote，push 過去由
+`post-receive` hook 當場部署。
+
+```bash
+git remote add prod ssh://ubuntu@141.147.176.204/home/ubuntu/dochuki.git
+git push prod main
+```
+
+兩條路走的是同一支 `deploy-prod.sh`、同一把 `flock`，同時發動也不會打架。
+
+### 刻意這樣設計的地方
+
+- **開發樹永不 `reset --hard`**。`sync.sh` 只在工作樹完全乾淨時做 `merge --ff-only`，
+  有任何未提交的改動就整棵跳過並寫進 log。寧可不同步，也不弄丟正在改的東西。
+- **正式站工作樹沒有 `.git`**，用 `git --git-dir=... --work-tree=... checkout -f`
+  取出。這樣它不可能被誤當成開發目錄拿來改，權威永遠在 bare repo。
+- **`checkout -f` 不刪未追蹤檔案**，所以 `~/dochuki-prod/.env` 不會被部署洗掉。
+  第一次部署時由 `deploy-prod.sh` 從 `~/dochuki/.env` 撈出 `GEMINI_API_KEY`
+  與 `FX_API_BASE` 產生（`app` 的 `DATABASE_URL` 是 compose 寫死指向內網
+  `db:5432`，不吃 `.env`）。
+- **sync 遇到無法快轉就停手**。如果有人 `git push prod` 之後忘了推 GitHub，
+  bare repo 的 main 會領先 GitHub，這時強行快轉等於把那份丟掉，所以改成寫
+  log 叫人來看。
+- **migration 由部署流程跑，容器不自動跑**（沿用 README 部署章節的決定）。
+  `migrate deploy` 重複執行是安全的，失敗會重試 30 次再放棄。
+
+### 常用指令
+
+```bash
+~/deploy/deploy-prod.sh                        # 手動部署
+~/deploy/sync.sh                               # 手動同步一次
+tail -f ~/deploy/deploy.log                    # 部署紀錄
+systemctl list-timers dochuki-sync.timer       # 下次什麼時候跑
+journalctl -u dochuki-sync.service -n 50       # 定時任務的輸出
+docker compose -p dochuki-prod -f ~/dochuki-prod/docker-compose.yml \
+  -f ~/dochuki-prod/docker-compose.prod.yml logs --tail=100 app
+```
+
+### 還沒做：對外公開
+
+正式站目前**只綁 `127.0.0.1:3100`**，從本機開 tunnel 驗收：
+
+```bash
+ssh -N -L 3100:localhost:3100 dochuki
+```
+
+要真的讓手機在旅途中連得到，還缺三樣，見上面「對外公開網域＋HTTPS」章節：
+網域、TLS 憑證與反向代理、以及**至少一層存取保護**。P2 裁示暫不做帳號系統，
+沒有這層保護就開 Security List，等於誰有網址誰就能看／改行程與金額資料。
+這是 `docker-compose.prod.yml` 把 app 綁在 loopback 而不是 `0.0.0.0` 的原因。
