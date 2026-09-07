@@ -77,6 +77,46 @@ export async function updateTrip(
   });
 }
 
+// ------------------------------------------------ 行程歸屬驗證（P7.0）----
+
+/**
+ * 所有「以子物件 id 為鍵」的寫入都必須連同 tripId 一起比對。少了這一步，
+ * 拿到別的行程的 cuid 就能跨行程讀寫；單使用者時只靠 cuid 不可猜測性擋著，
+ * 帳號系統一上線就是實打實的越權（見 docs/AUTH_PLAN.md 的 P7.0 章節）。
+ *
+ * 做法是把 tripId 直接寫進 update/delete 的 where——Prisma 允許唯一鍵搭配
+ * 額外過濾條件，比不上就丟 P2025。驗證與寫入在同一次查詢完成，不會有
+ * 「先查再寫」之間被改掉的空窗。這個函式只負責把 P2025 轉成看得懂的訊息。
+ */
+async function inTrip<T>(what: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (isRecordNotFound(error)) {
+      throw new Error(`找不到這筆${what}，或它不屬於這個行程`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * 組別是「以 id 指定、但不是 where 主鍵」的欄位（成員的 groupId），沒辦法
+ * 靠上面那招在同一次查詢裡驗證，只能先查一次。null 代表不分組，直接放行。
+ */
+async function assertGroupInTrip(
+  tripId: string,
+  groupId: string | null | undefined,
+): Promise<void> {
+  if (groupId === null || groupId === undefined) return;
+  const group = await prisma.group.findFirst({
+    where: { id: groupId, tripId },
+    select: { id: true },
+  });
+  if (group === null) {
+    throw new Error("指定的組別不屬於這個行程");
+  }
+}
+
 // --------------------------------------------------------------- Group ----
 
 export async function createGroup(
@@ -89,10 +129,13 @@ export async function createGroup(
 }
 
 export async function renameGroup(
+  tripId: string,
   groupId: string,
   name: string,
 ): Promise<void> {
-  await prisma.group.update({ where: { id: groupId }, data: { name } });
+  await inTrip("組別", () =>
+    prisma.group.update({ where: { id: groupId, tripId }, data: { name } }),
+  );
 }
 
 /**
@@ -100,8 +143,13 @@ export async function renameGroup(
  * 不會連帶刪除成員；BY_GROUP 支出的分攤結果是寫入時就落地的快照，不受影響
  * （schema 未替 Expense 存 groupId，這是刻意的，見 IMPLEMENTATION.md §4）。
  */
-export async function deleteGroup(groupId: string): Promise<void> {
-  await prisma.group.delete({ where: { id: groupId } });
+export async function deleteGroup(
+  tripId: string,
+  groupId: string,
+): Promise<void> {
+  await inTrip("組別", () =>
+    prisma.group.delete({ where: { id: groupId, tripId } }),
+  );
 }
 
 // -------------------------------------------------------------- Member ----
@@ -109,6 +157,7 @@ export async function deleteGroup(groupId: string): Promise<void> {
 export async function createMember(
   input: MemberFormInput,
 ): Promise<{ id: string }> {
+  await assertGroupInTrip(input.tripId, input.groupId);
   const member = await prisma.member.create({
     data: {
       tripId: input.tripId,
@@ -123,13 +172,16 @@ export async function updateMember(
   memberId: string,
   input: MemberFormInput,
 ): Promise<void> {
-  await prisma.member.update({
-    where: { id: memberId },
-    data: {
-      name: input.name,
-      groupId: input.groupId,
-    },
-  });
+  await assertGroupInTrip(input.tripId, input.groupId);
+  await inTrip("成員", () =>
+    prisma.member.update({
+      where: { id: memberId, tripId: input.tripId },
+      data: {
+        name: input.name,
+        groupId: input.groupId,
+      },
+    }),
+  );
 }
 
 /**
@@ -141,15 +193,31 @@ export async function updateMember(
  * 成功、payerId 會被資料庫設為 null（SET NULL），該筆支出會變成「無付款人」。
  * P2 範圍內接受此行為，之後如需保留付款人歷史需另外處理。
  */
-export async function deleteMember(memberId: string): Promise<void> {
+export async function deleteMember(
+  tripId: string,
+  memberId: string,
+): Promise<void> {
   try {
-    await prisma.member.delete({ where: { id: memberId } });
+    await prisma.member.delete({ where: { id: memberId, tripId } });
   } catch (error) {
     if (isForeignKeyViolation(error)) {
       throw new Error("此成員已有分攤紀錄，無法刪除");
     }
+    if (isRecordNotFound(error)) {
+      throw new Error("找不到這位成員，或他不屬於這個行程");
+    }
     throw error;
   }
+}
+
+/** Prisma 的「where 條件找不到對應資料列」——這裡代表 tripId 比對不過 */
+function isRecordNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: unknown }).code === "P2025"
+  );
 }
 
 function isForeignKeyViolation(error: unknown): boolean {
@@ -237,6 +305,13 @@ async function resolveExpense(
     rate: resolution.rate,
   });
 
+  // 付款人與分攤名單都是外來的 memberId，buildParticipants 對 EQUAL／WEIGHT／
+  // EXACT 是直接照單全收（BY_GROUP 例外，它本來就只讀 trip.members）。不比對
+  // 的話，塞進別的行程的 memberId 會建出跨行程的 ExpenseShare——外鍵擋不住
+  // （Member 確實存在），但那筆分攤會出現在另一趟行程的結算裡。
+  assertMembersInTrip(input, trip.members);
+  await assertGroupInTrip(input.tripId, input.splitMode === "BY_GROUP" ? input.groupId : null);
+
   const participants = buildParticipants(input, trip.members);
   const groupId = input.splitMode === "BY_GROUP" ? input.groupId : null;
 
@@ -271,6 +346,36 @@ async function resolveExpense(
     fundSpend: input.fundSpend,
     fundId: input.fundSpend ? (fund?.id ?? null) : null,
   };
+}
+
+/**
+ * 確認這筆支出引用到的每一個 memberId 都真的是這趟行程的成員。
+ *
+ * 涵蓋付款人、分攤名單、EXACT 的指定金額、WEIGHT 的逐人權重四個來源——
+ * 其中 weights 就算沒出現在 participantIds 裡也一併檢查，避免留下一個
+ * 「權重表可以填別的行程的人」的縫。BY_GROUP 不必檢查，它的名單是從
+ * trip.members 產生的，本來就不吃外來 id。
+ */
+function assertMembersInTrip(
+  input: ExpenseFormInput,
+  tripMembers: Array<{ id: string }>,
+): void {
+  const known = new Set(tripMembers.map((member) => member.id));
+  const referenced = new Set<string>([input.payerId]);
+  if (input.splitMode === "EQUAL" || input.splitMode === "WEIGHT") {
+    for (const id of input.participantIds) referenced.add(id);
+  }
+  if (input.splitMode === "WEIGHT") {
+    for (const row of input.weights) referenced.add(row.memberId);
+  }
+  if (input.splitMode === "EXACT") {
+    for (const row of input.exactShares) referenced.add(row.memberId);
+  }
+  for (const id of referenced) {
+    if (!known.has(id)) {
+      throw new Error("分攤名單裡有不屬於這個行程的成員");
+    }
+  }
 }
 
 function buildParticipants(
@@ -360,11 +465,13 @@ export async function createExpense(
   receiptContext?: ReceiptContext,
 ): Promise<{ id: string }> {
   if (receiptContext !== undefined) {
-    const receipt = await prisma.receipt.findUnique({
-      where: { id: receiptContext.receiptId },
+    // P7.0：連 tripId 一起比對——沒有這個條件，拿 A 行程的 receiptId 就能
+    // 把那張收據的品項與金額消費進 B 行程的支出裡
+    const receipt = await prisma.receipt.findFirst({
+      where: { id: receiptContext.receiptId, tripId: input.tripId },
     });
     if (receipt === null) {
-      throw new Error("找不到這張收據，可能已被刪除");
+      throw new Error("找不到這張收據，可能已被刪除，或它不屬於這個行程");
     }
     if (receipt.expenseId !== null) {
       throw new Error("這張收據已經建立過支出，請勿重複送出");
@@ -443,9 +550,13 @@ export async function updateExpense(
   input: ExpenseFormInput,
 ): Promise<void> {
   const resolved = await resolveExpense(input);
-  await prisma.$transaction(async (tx) => {
+  // 交易本體不縮排包進 inTrip，改成先建立 Promise 再交給它 await——只是為了
+  // 讓 P2025 轉成看得懂的訊息，不影響交易語意（建立後同一個 tick 就 await）
+  const run = prisma.$transaction(async (tx) => {
+    // where 帶上 tripId：改到別的行程的支出會丟 P2025 讓整個交易回滾，
+    // 下面那幾筆 ExpenseShare／FundEntry 的異動也一併不會落地
     await tx.expense.update({
-      where: { id: expenseId },
+      where: { id: expenseId, tripId: input.tripId },
       data: {
         payerId: input.payerId,
         paidAt: new Date(input.paidAt),
@@ -485,6 +596,7 @@ export async function updateExpense(
       });
     }
   });
+  await inTrip("支出", () => run);
 }
 
 /**
@@ -492,11 +604,18 @@ export async function updateExpense(
  * FundEntry.linkedExpenseId 沒有 DB 層外鍵（見 schema.prisma），得手動清，
  * 否則會留下指向不存在支出的公費支用記錄。
  */
-export async function deleteExpense(expenseId: string): Promise<void> {
-  await prisma.$transaction([
-    prisma.fundEntry.deleteMany({ where: { linkedExpenseId: expenseId } }),
-    prisma.expense.delete({ where: { id: expenseId } }),
-  ]);
+export async function deleteExpense(
+  tripId: string,
+  expenseId: string,
+): Promise<void> {
+  // 陣列型交易按順序執行：expense.delete 的 where 比不上 tripId 就丟 P2025，
+  // 前一句 fundEntry.deleteMany 會跟著回滾，不會留下砍了公費卻沒砍支出的狀態
+  await inTrip("支出", () =>
+    prisma.$transaction([
+      prisma.fundEntry.deleteMany({ where: { linkedExpenseId: expenseId } }),
+      prisma.expense.delete({ where: { id: expenseId, tripId } }),
+    ]),
+  );
 }
 
 // --------------------------------------------------------------- Fund -----
@@ -531,13 +650,35 @@ export async function createFund(input: {
   return { id: fund.id };
 }
 
-/** 提撥：只有這個方向能手動新增，支用一律由 createExpense/updateExpense 自動記 */
+/**
+ * 提撥：只有這個方向能手動新增，支用一律由 createExpense/updateExpense 自動記。
+ *
+ * fundId 與 memberId 都是外來的 id，兩個都要確認屬於同一個行程——否則可以
+ * 把 A 行程的成員提撥進 B 行程的公費池，公費餘額與成員名單會各說各話。
+ */
 export async function createFundContribution(input: {
+  tripId: string;
   fundId: string;
   memberId: string;
   amount: string;
   note?: string;
 }): Promise<{ id: string }> {
+  const [fund, member] = await Promise.all([
+    prisma.fund.findFirst({
+      where: { id: input.fundId, tripId: input.tripId },
+      select: { id: true },
+    }),
+    prisma.member.findFirst({
+      where: { id: input.memberId, tripId: input.tripId },
+      select: { id: true },
+    }),
+  ]);
+  if (fund === null) {
+    throw new Error("找不到這個公費池，或它不屬於這個行程");
+  }
+  if (member === null) {
+    throw new Error("找不到這位成員，或他不屬於這個行程");
+  }
   const entry = await prisma.fundEntry.create({
     data: {
       fundId: input.fundId,
@@ -555,8 +696,18 @@ export async function createFundContribution(input: {
  * （linkedExpenseId 指回某筆 Expense），要改動請去改或刪那筆支出，
  * 不能在這裡直接刪，否則公費餘額會跟支出記錄各說各話。
  */
-export async function deleteFundContribution(entryId: string): Promise<void> {
-  const entry = await prisma.fundEntry.findUniqueOrThrow({ where: { id: entryId } });
+export async function deleteFundContribution(
+  tripId: string,
+  entryId: string,
+): Promise<void> {
+  // FundEntry 沒有自己的 tripId，歸屬要靠 fund.tripId 繞一層
+  const entry = await prisma.fundEntry.findFirst({
+    where: { id: entryId, fund: { tripId } },
+    select: { id: true, type: true },
+  });
+  if (entry === null) {
+    throw new Error("找不到這筆公費紀錄，或它不屬於這個行程");
+  }
   if (entry.type !== "CONTRIBUTION") {
     throw new Error("支用記錄跟著支出走，請到對應的支出頁面修改或刪除");
   }

@@ -50,6 +50,7 @@ model Trip {
   groups       Group[]
   expenses     Expense[]
   funds        Fund[]
+  receipts     Receipt[]
   createdAt    DateTime  @default(now())
 }
 
@@ -121,7 +122,13 @@ model LineItem {
 }
 
 model Receipt {
-  id         String      @id @default(cuid())
+  id String @id @default(cuid())
+  // 收據一上傳就屬於某個行程（api/parse/route.ts 本來就收得到 tripId）。
+  // P7.0 之前沒有這個欄位，尚未建立支出的收據與任何行程都沒有關聯，
+  // 導致「這張收據屬不屬於我的行程」這個問題在資料層問不出來——不是查詢
+  // 寫錯，是資料模型缺一塊。expenseId 仍可為 null（上傳後、確認入帳前）。
+  tripId     String
+  trip       Trip        @relation(fields: [tripId], references: [id])
   expenseId  String?
   expense    Expense?    @relation(fields: [expenseId], references: [id])
   imagePath  String // /data/receipts/... 原圖永久保存
@@ -130,6 +137,8 @@ model Receipt {
   confidence Json? // 逐欄信心
   parsedAt   DateTime?
   createdAt  DateTime    @default(now())
+
+  @@index([tripId])
 }
 
 model Fund {

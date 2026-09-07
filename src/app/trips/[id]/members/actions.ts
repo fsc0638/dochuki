@@ -43,7 +43,7 @@ export async function deleteGroupAction(
   _formData: FormData,
 ): Promise<ActionState> {
   try {
-    await deleteGroup(groupId);
+    await deleteGroup(tripId, groupId);
   } catch (error) {
     return { error: toErrorMessage(error) };
   }
@@ -99,7 +99,7 @@ export async function deleteMemberAction(
   _formData: FormData,
 ): Promise<ActionState> {
   try {
-    await deleteMember(memberId);
+    await deleteMember(tripId, memberId);
   } catch (error) {
     return { error: toErrorMessage(error) };
   }

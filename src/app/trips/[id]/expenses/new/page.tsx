@@ -72,7 +72,7 @@ export default async function NewExpensePage({
   let parseFailed = false;
 
   if (receiptId !== undefined) {
-    const receipt = await loadReceipt(receiptId);
+    const receipt = await loadReceipt(id, receiptId);
     const parsed = receipt === null ? null : parseReceiptJson(receipt.parseJson);
     if (parsed !== null) {
       const fallbackTakenAt =

@@ -29,8 +29,22 @@ export async function loadTrip(tripId: string) {
   });
 }
 
-export async function listTrips() {
-  return prisma.trip.findMany({ orderBy: { startDate: "desc" } });
+/**
+ * 行程清單。
+ *
+ * P7.0 之前是無條件 `findMany`，也就是列出資料庫裡所有行程——單使用者時
+ * 沒有症狀，帳號系統一上線就是每個人都看得到別人的旅程（見
+ * docs/AUTH_PLAN.md）。這裡先把「可過濾」這個接縫留出來，行為不變：
+ * 不給 ids 就跟以前一樣全列。
+ *
+ * P7.1 有了 TripMembership 之後，呼叫端要改成傳入當前使用者有權限的行程
+ * id；屆時 ids 會變成必要參數，讓「忘記過濾」變成編譯錯誤而不是資料外洩。
+ */
+export async function listTrips(filter: { ids?: string[] } = {}) {
+  return prisma.trip.findMany({
+    where: filter.ids === undefined ? undefined : { id: { in: filter.ids } },
+    orderBy: { startDate: "desc" },
+  });
 }
 
 export interface ExpenseFilter {

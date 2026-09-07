@@ -12,16 +12,21 @@ import {
 } from "@/lib/trips/load";
 import {
   createExpense,
+  createFund,
+  createFundContribution,
   createGroup,
   createMember,
   createTrip,
   deleteExpense,
+  deleteFundContribution,
   deleteGroup,
   deleteMember,
+  renameGroup,
   updateExpense,
   updateMember,
   updateTrip,
 } from "@/lib/trips/write";
+import { loadReceipt } from "@/lib/receipts/load";
 
 /**
  * P2 寫入層／讀取層測試。
@@ -38,6 +43,9 @@ import {
  */
 
 async function purgeTrip(tripId: string): Promise<void> {
+  // Receipt 要先清：P7.0 之後 Trip→Receipt 是 ON DELETE RESTRICT，留著沒綁
+  // 支出的收據會擋住整個行程刪不掉
+  await prisma.receipt.deleteMany({ where: { tripId } });
   await prisma.expenseShare.deleteMany({ where: { expense: { tripId } } });
   await prisma.fundEntry.deleteMany({ where: { fund: { tripId } } });
   await prisma.fund.deleteMany({ where: { tripId } });
@@ -92,7 +100,7 @@ describe("trips/write · trips/load", () => {
   describe("createMember / updateMember / deleteMember", () => {
     it("刪除沒有分攤紀錄的成員：成功", async () => {
       const temp = await createMember({ tripId, name: "暫時成員", groupId: null });
-      await deleteMember(temp.id);
+      await deleteMember(tripId, temp.id);
       const found = await prisma.member.findUnique({ where: { id: temp.id } });
       expect(found).toBeNull();
     });
@@ -107,7 +115,7 @@ describe("trips/write · trips/load", () => {
       const updated = await prisma.member.findUniqueOrThrow({ where: { id: temp.id } });
       expect(updated.name).toBe("改名後");
       expect(updated.groupId).toBe(groupId);
-      await deleteMember(temp.id);
+      await deleteMember(tripId, temp.id);
     });
   });
 
@@ -168,7 +176,7 @@ describe("trips/write · trips/load", () => {
     });
 
     it("deleteExpense：ExpenseShare 隨之刪除（cascade）", async () => {
-      await deleteExpense(expenseId);
+      await deleteExpense(tripId, expenseId);
       const shares = await prisma.expenseShare.findMany({ where: { expenseId } });
       expect(shares).toHaveLength(0);
       const row = await prisma.expense.findUnique({ where: { id: expenseId } });
@@ -194,7 +202,7 @@ describe("trips/write · trips/load", () => {
       const row = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
       expect(row.rateSource).toBe("MANUAL");
       expect(fromDb(row.amountHome).toString()).toBe("315");
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
   });
 
@@ -228,7 +236,7 @@ describe("trips/write · trips/load", () => {
       const cached = await prisma.fxRate.findFirst({ where: { base: "XW1", quote: "TWD" } });
       expect(cached).not.toBeNull();
 
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
 
     it("API 也失敗、無手動輸入：拋出可操作的錯誤訊息，不建立支出", async () => {
@@ -283,8 +291,8 @@ describe("trips/write · trips/load", () => {
       const inferred = await inferByGroupSelection(tripId, memberIds);
       expect(inferred).toBe(groupId);
 
-      await deleteExpense(expense.id);
-      await deleteMember(outsider);
+      await deleteExpense(tripId, expense.id);
+      await deleteMember(tripId, outsider);
     });
   });
 
@@ -309,7 +317,7 @@ describe("trips/write · trips/load", () => {
       const byMember = new Map(shares.map((s) => [s.memberId, fromDb(s.shareHome).toString()]));
       expect(byMember.get(m1)).toBe("600");
       expect(byMember.get(m2)).toBe("400");
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
 
     it("總和不符：拋出錯誤，不建立支出", async () => {
@@ -355,7 +363,7 @@ describe("trips/write · trips/load", () => {
   describe("createExpense · receiptContext（P3 拍照解析）", () => {
     it("建立 LineItem 並把 Receipt 綁回這筆 Expense", async () => {
       const receipt = await prisma.receipt.create({
-        data: { imagePath: "test-fixture.jpg", engine: "LLM_VISION" },
+        data: { imagePath: "test-fixture.jpg", engine: "LLM_VISION", tripId },
       });
 
       const expense = await createExpense(
@@ -417,13 +425,13 @@ describe("trips/write · trips/load", () => {
       });
       expect(updatedReceipt.expenseId).toBe(expense.id);
 
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
       await prisma.receipt.delete({ where: { id: receipt.id } });
     });
 
     it("lineItems 為空陣列：不建任何 LineItem，但仍綁回 Receipt", async () => {
       const receipt = await prisma.receipt.create({
-        data: { imagePath: "test-fixture-2.jpg", engine: "LLM_VISION" },
+        data: { imagePath: "test-fixture-2.jpg", engine: "LLM_VISION", tripId },
       });
 
       const expense = await createExpense(
@@ -447,7 +455,7 @@ describe("trips/write · trips/load", () => {
       const updatedReceipt = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
       expect(updatedReceipt.expenseId).toBe(expense.id);
 
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
       await prisma.receipt.delete({ where: { id: receipt.id } });
     });
 
@@ -466,12 +474,12 @@ describe("trips/write · trips/load", () => {
       });
       const lineItems = await prisma.lineItem.findMany({ where: { expenseId: expense.id } });
       expect(lineItems).toHaveLength(0);
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
 
     it("unitPrice 推算除不盡時精確到 6 位小數，不是裸浮點誤差（1000÷3）", async () => {
       const receipt = await prisma.receipt.create({
-        data: { imagePath: "test-fixture-3.jpg", engine: "LLM_VISION" },
+        data: { imagePath: "test-fixture-3.jpg", engine: "LLM_VISION", tripId },
       });
       const expense = await createExpense(
         {
@@ -507,13 +515,13 @@ describe("trips/write · trips/load", () => {
       // 1000 ÷ 3 精確值為 333.333333...，Decimal(18,6) 下 HALF_UP 收斂到 6 位
       expect(fromDb(lineItem.unitPrice).toString()).toBe("333.333333");
 
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
       await prisma.receipt.delete({ where: { id: receipt.id } });
     });
 
     it("同一張收據重複送出（雙擊/瀏覽器上一頁後重送）：第二次拒絕，不建出重複支出", async () => {
       const receipt = await prisma.receipt.create({
-        data: { imagePath: "test-fixture-4.jpg", engine: "LLM_VISION" },
+        data: { imagePath: "test-fixture-4.jpg", engine: "LLM_VISION", tripId },
       });
       const input = {
         tripId,
@@ -540,7 +548,7 @@ describe("trips/write · trips/load", () => {
       const updatedReceipt = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
       expect(updatedReceipt.expenseId).toBe(first.id);
 
-      await deleteExpense(first.id);
+      await deleteExpense(tripId, first.id);
       await prisma.receipt.delete({ where: { id: receipt.id } });
     });
 
@@ -582,8 +590,8 @@ describe("trips/write · trips/load", () => {
         splitMode: "EQUAL",
         participantIds: [m1, m2],
       });
-      await expect(deleteMember(m1)).rejects.toThrow("此成員已有分攤紀錄，無法刪除");
-      await deleteExpense(expense.id);
+      await expect(deleteMember(tripId, m1)).rejects.toThrow("此成員已有分攤紀錄，無法刪除");
+      await deleteExpense(tripId, expense.id);
     });
   });
 
@@ -592,11 +600,11 @@ describe("trips/write · trips/load", () => {
       const g = await createGroup({ tripId, name: "即將刪除的組" });
       const tempMember = await createMember({ tripId, name: "臨時成員", groupId: g.id });
 
-      await deleteGroup(g.id);
+      await deleteGroup(tripId, g.id);
 
       const member = await prisma.member.findUniqueOrThrow({ where: { id: tempMember.id } });
       expect(member.groupId).toBeNull();
-      await deleteMember(tempMember.id);
+      await deleteMember(tripId, tempMember.id);
     });
   });
 
@@ -642,8 +650,8 @@ describe("trips/write · trips/load", () => {
       const edit = await loadExpenseForEdit(e1.id);
       expect(edit?.shares).toHaveLength(2);
 
-      await deleteExpense(e1.id);
-      await deleteExpense(e2.id);
+      await deleteExpense(tripId, e1.id);
+      await deleteExpense(tripId, e2.id);
     });
   });
 
@@ -683,7 +691,7 @@ describe("trips/write · trips/load", () => {
         homeCurrency: "TWD",
         fixedRates: [{ currency: "JPY", rate: "0.25" }],
       });
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
   });
 
@@ -742,7 +750,7 @@ describe("trips/write · trips/load", () => {
       expect(entries[0]?.memberId).toBeNull();
       expect(fromDb(entries[0]?.amount ?? 0).toString()).toBe("6000");
 
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
 
     it("update 把 fundSpend 從 true 改成 false：舊的 SPEND FundEntry 被清掉", async () => {
@@ -774,7 +782,7 @@ describe("trips/write · trips/load", () => {
       });
 
       expect(await prisma.fundEntry.count({ where: { linkedExpenseId: expense.id } })).toBe(0);
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
 
     it("update 改動金額：對應的 SPEND FundEntry 金額跟著同步，不留舊金額的殘影", async () => {
@@ -808,7 +816,7 @@ describe("trips/write · trips/load", () => {
       expect(entries).toHaveLength(1);
       expect(fromDb(entries[0]?.amount ?? 0).toString()).toBe("1500");
 
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
     });
 
     it("deleteExpense：連帶清掉關聯的 SPEND FundEntry，不留下指向不存在支出的殘影", async () => {
@@ -826,7 +834,7 @@ describe("trips/write · trips/load", () => {
       });
       expect(await prisma.fundEntry.count({ where: { linkedExpenseId: expense.id } })).toBe(1);
 
-      await deleteExpense(expense.id);
+      await deleteExpense(tripId, expense.id);
 
       expect(await prisma.fundEntry.count({ where: { linkedExpenseId: expense.id } })).toBe(0);
     });
@@ -858,5 +866,239 @@ describe("trips/write · trips/load", () => {
 
       await purgeTrip(otherTrip.id);
     });
+  });
+});
+
+/**
+ * P7.0 行程歸屬驗證。
+ *
+ * 這一組測的不是「功能能不能用」，而是「拿到別的行程的 id 會不會被擋下來」。
+ * 帳號系統上線前這些路徑只靠 cuid 不可猜測性防護，上線後就是實打實的越權，
+ * 所以每一條都要有測試釘住（見 docs/AUTH_PLAN.md 的 P7.0 章節）。
+ *
+ * 共通手法：建 A、B 兩個獨立行程，拿 A 的子物件 id 搭配 B 的 tripId 去呼叫，
+ * 斷言「被拒絕」且「A 的資料原封不動」——只驗有沒有丟例外不夠，要確認沒有
+ * 造成副作用。
+ */
+describe("P7.0 · 跨行程存取一律拒絕", () => {
+  let tripA: string;
+  let tripB: string;
+  let groupA: string;
+  let memberA1: string;
+  let memberA2: string;
+  let memberB: string;
+
+  beforeAll(async () => {
+    const a = await createTrip({
+      name: "P7.0 行程A",
+      startDate: "2026-11-01",
+      endDate: "2026-11-03",
+      homeCurrency: "TWD",
+      fixedRates: [],
+    });
+    const b = await createTrip({
+      name: "P7.0 行程B",
+      startDate: "2026-11-01",
+      endDate: "2026-11-03",
+      homeCurrency: "TWD",
+      fixedRates: [],
+    });
+    tripA = a.id;
+    tripB = b.id;
+    groupA = (await createGroup({ tripId: tripA, name: "A的組別" })).id;
+    memberA1 = (await createMember({ tripId: tripA, name: "A甲", groupId: groupA })).id;
+    memberA2 = (await createMember({ tripId: tripA, name: "A乙", groupId: null })).id;
+    memberB = (await createMember({ tripId: tripB, name: "B丙", groupId: null })).id;
+  });
+
+  afterAll(async () => {
+    await purgeTrip(tripA);
+    await purgeTrip(tripB);
+  });
+
+  async function makeExpenseInA(): Promise<string> {
+    const expense = await createExpense({
+      tripId: tripA,
+      description: "A的支出",
+      category: "餐飲",
+      paidAt: "2026-11-01T12:00:00+08:00",
+      currency: "TWD",
+      amountOriginal: "600",
+      payerId: memberA1,
+      fundSpend: false,
+      splitMode: "EQUAL",
+      participantIds: [memberA1, memberA2],
+    });
+    return expense.id;
+  }
+
+  it("deleteExpense：帶 B 的 tripId 刪 A 的支出 → 拒絕，且支出與分攤都還在", async () => {
+    const expenseId = await makeExpenseInA();
+
+    await expect(deleteExpense(tripB, expenseId)).rejects.toThrow("不屬於這個行程");
+
+    expect(await prisma.expense.findUnique({ where: { id: expenseId } })).not.toBeNull();
+    expect(await prisma.expenseShare.count({ where: { expenseId } })).toBe(2);
+
+    await deleteExpense(tripA, expenseId);
+  });
+
+  it("updateExpense：input.tripId 指向 B → 拒絕，A 的支出內容不變", async () => {
+    const expenseId = await makeExpenseInA();
+
+    await expect(
+      updateExpense(expenseId, {
+        tripId: tripB,
+        description: "被竄改",
+        category: "雜項",
+        paidAt: "2026-11-02T12:00:00+08:00",
+        currency: "TWD",
+        amountOriginal: "9999",
+        payerId: memberB,
+        fundSpend: false,
+        splitMode: "EQUAL",
+        participantIds: [memberB],
+      }),
+    ).rejects.toThrow();
+
+    const row = await prisma.expense.findUniqueOrThrow({ where: { id: expenseId } });
+    expect(row.description).toBe("A的支出");
+    expect(fromDb(row.amountOriginal).toString()).toBe("600");
+
+    await deleteExpense(tripA, expenseId);
+  });
+
+  it("deleteMember / updateMember / deleteGroup / renameGroup：帶 B 的 tripId → 全部拒絕", async () => {
+    const temp = await createMember({ tripId: tripA, name: "A暫存", groupId: null });
+
+    await expect(deleteMember(tripB, temp.id)).rejects.toThrow("不屬於這個行程");
+    await expect(
+      updateMember(temp.id, { tripId: tripB, name: "被改名", groupId: null }),
+    ).rejects.toThrow("不屬於這個行程");
+    await expect(deleteGroup(tripB, groupA)).rejects.toThrow("不屬於這個行程");
+    await expect(renameGroup(tripB, groupA, "被改名")).rejects.toThrow("不屬於這個行程");
+
+    const stillThere = await prisma.member.findUniqueOrThrow({ where: { id: temp.id } });
+    expect(stillThere.name).toBe("A暫存");
+    const group = await prisma.group.findUniqueOrThrow({ where: { id: groupA } });
+    expect(group.name).toBe("A的組別");
+
+    await deleteMember(tripA, temp.id);
+  });
+
+  it("createMember：把成員指派到別的行程的組別 → 拒絕", async () => {
+    await expect(
+      createMember({ tripId: tripB, name: "想混進A的組", groupId: groupA }),
+    ).rejects.toThrow("不屬於這個行程");
+    expect(await prisma.member.count({ where: { tripId: tripB } })).toBe(1);
+  });
+
+  it("createExpense：分攤名單塞進別的行程的成員 → 拒絕，不留下半筆支出", async () => {
+    await expect(
+      createExpense({
+        tripId: tripB,
+        description: "混入A成員",
+        category: "餐飲",
+        paidAt: "2026-11-01T12:00:00+08:00",
+        currency: "TWD",
+        amountOriginal: "300",
+        payerId: memberB,
+        fundSpend: false,
+        splitMode: "EQUAL",
+        participantIds: [memberB, memberA1],
+      }),
+    ).rejects.toThrow("不屬於這個行程");
+
+    expect(await prisma.expense.count({ where: { tripId: tripB } })).toBe(0);
+  });
+
+  it("createExpense：付款人是別的行程的成員 → 拒絕", async () => {
+    await expect(
+      createExpense({
+        tripId: tripB,
+        description: "A的人當付款人",
+        category: "餐飲",
+        paidAt: "2026-11-01T12:00:00+08:00",
+        currency: "TWD",
+        amountOriginal: "300",
+        payerId: memberA1,
+        fundSpend: false,
+        splitMode: "EQUAL",
+        participantIds: [memberA1],
+      }),
+    ).rejects.toThrow("不屬於這個行程");
+  });
+
+  it("公費：提撥別的行程的成員、以及帶錯 tripId 刪提撥 → 都拒絕", async () => {
+    const fundA = await createFund({ tripId: tripA, name: "A的公費", currency: "TWD" });
+
+    await expect(
+      createFundContribution({
+        tripId: tripA,
+        fundId: fundA.id,
+        memberId: memberB, // B 的成員
+        amount: "1000",
+      }),
+    ).rejects.toThrow("不屬於這個行程");
+
+    await expect(
+      createFundContribution({
+        tripId: tripB, // 用 B 的 tripId 去碰 A 的公費池
+        fundId: fundA.id,
+        memberId: memberB,
+        amount: "1000",
+      }),
+    ).rejects.toThrow("不屬於這個行程");
+
+    const entry = await createFundContribution({
+      tripId: tripA,
+      fundId: fundA.id,
+      memberId: memberA1,
+      amount: "1000",
+    });
+    await expect(deleteFundContribution(tripB, entry.id)).rejects.toThrow("不屬於這個行程");
+    expect(await prisma.fundEntry.findUnique({ where: { id: entry.id } })).not.toBeNull();
+
+    await deleteFundContribution(tripA, entry.id);
+  });
+
+  it("loadReceipt：拿 A 的收據配 B 的 tripId → 讀不到（回 null）", async () => {
+    const receipt = await prisma.receipt.create({
+      data: { imagePath: "p7-fixture.jpg", engine: "LLM_VISION", tripId: tripA },
+    });
+
+    expect(await loadReceipt(tripB, receipt.id)).toBeNull();
+    expect(await loadReceipt(tripA, receipt.id)).not.toBeNull();
+
+    await prisma.receipt.delete({ where: { id: receipt.id } });
+  });
+
+  it("createExpense：拿 A 的收據在 B 建支出 → 拒絕，收據不被綁走", async () => {
+    const receipt = await prisma.receipt.create({
+      data: { imagePath: "p7-fixture-2.jpg", engine: "LLM_VISION", tripId: tripA },
+    });
+
+    await expect(
+      createExpense(
+        {
+          tripId: tripB,
+          description: "偷用A的收據",
+          category: "餐飲",
+          paidAt: "2026-11-01T12:00:00+08:00",
+          currency: "TWD",
+          amountOriginal: "300",
+          payerId: memberB,
+          fundSpend: false,
+          splitMode: "EQUAL",
+          participantIds: [memberB],
+        },
+        { receiptId: receipt.id, lineItems: [] },
+      ),
+    ).rejects.toThrow("不屬於這個行程");
+
+    const after = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
+    expect(after.expenseId).toBeNull();
+
+    await prisma.receipt.delete({ where: { id: receipt.id } });
   });
 });

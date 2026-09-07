@@ -47,7 +47,7 @@ export async function createFundContributionAction(
     };
   }
   try {
-    await createFundContribution(parsed.data);
+    await createFundContribution({ ...parsed.data, tripId });
   } catch (error) {
     return { error: toErrorMessage(error) };
   }
@@ -62,7 +62,7 @@ export async function deleteFundContributionAction(
   _formData: FormData,
 ): Promise<ActionState> {
   try {
-    await deleteFundContribution(entryId);
+    await deleteFundContribution(tripId, entryId);
   } catch (error) {
     return { error: toErrorMessage(error) };
   }

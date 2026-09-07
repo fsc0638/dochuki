@@ -275,7 +275,7 @@ session 過期回的 401 會被歸類成「這筆資料有問題」。應該把 
 
 | 階段 | 內容 | 完成定義 |
 |---|---|---|
-| **P7.0** | 六個函式下推 `tripId`、`listTrips` 改成可過濾、`Receipt` 加 `tripId` 並回填 | 行為不變，`pnpm test regression` 17/17 不變 |
+| **P7.0** ✅ | 見下方「P7.0 實際涵蓋範圍」——盤點後比原估的六個函式更廣 | 完成 2026-09-07：218 測試全綠、regression 17/17 不變 |
 | **P7.1** | 四張表、migration（含既有行程收編）、session 簽發與驗證、`scrypt` 雜湊 | 可用指令建立帳號並取得有效 session |
 | **P7.2** | 註冊／登入／登出頁、`middleware.ts` 做未登入導向、登入失敗次數限制 | 能用密碼登入登出 |
 | **P7.3** | 團長發券與撤銷 UI、認領頁、綁定 `Member` | 用邀請連結能在另一台裝置加入並看到自己的分攤 |
@@ -284,6 +284,54 @@ session 過期回的 401 會被歸類成「這筆資料有問題」。應該把 
 
 P7.5 正好接上 `CLOUD_SETUP.md` 裡卡住的地方。**P7.4 沒有全綠之前不要做 P7.5**，
 那等於把沒守門的服務放上公網。
+
+## P7.0 實際涵蓋範圍（2026-09-07 完成）
+
+動手前重新盤點寫入層，發現越權面比計畫寫的六個函式更廣。以下是實際處理的：
+
+**下推 `tripId` 到 where 條件**（比不上就丟 P2025，驗證與寫入同一次查詢完成，
+沒有「先查再寫」的空窗）：`renameGroup`、`deleteGroup`、`updateMember`、
+`deleteMember`、`updateExpense`、`deleteExpense`。
+
+**計畫沒寫、盤點才發現的四處**：
+
+1. `createFundContribution` 原本連 `tripId` 都沒收，`fundId` 與 `memberId`
+   兩個外來 id 都沒驗證——可以把 A 行程的成員提撥進 B 行程的公費池。
+2. `deleteFundContribution` 的 `FundEntry` 沒有自己的 `tripId`，歸屬要繞
+   `fund.tripId` 一層才驗得到。
+3. `createMember` / `updateMember` 的 `groupId` 沒驗證，可以把成員指派到
+   別的行程的組別。
+4. **最嚴重的一個**：`buildParticipants` 對 EQUAL／WEIGHT／EXACT 是直接照單
+   全收 `input` 裡的 memberId，不比對 `trip.members`。塞進別的行程的成員會
+   建出跨行程的 `ExpenseShare`——外鍵擋不住（那個 Member 確實存在），但那筆
+   分攤會出現在另一趟行程的結算裡。這是唯一一個會污染帳務數字的，其餘都是
+   讀寫越權。新增 `assertMembersInTrip` 一併檢查付款人、分攤名單、EXACT 的
+   指定金額、WEIGHT 的逐人權重四個來源。
+
+**其餘兩項照計畫**：`listTrips` 加上可選的 ids 過濾（不給就跟以前一樣全列，
+行為不變），`Receipt` 加 `tripId` 欄位＋回填 migration，`loadReceipt` 與
+`createExpense` 的收據檢查都改成連 `tripId` 一起比對。
+
+### 驗證
+
+- `pnpm lint` / `typecheck` / `build` 全過
+- `pnpm test` 218 passed（新增 9 條跨行程防護測試，從 209 起跳）
+- `pnpm test regression` 17/17 不變
+- migration 在開發資料庫套用成功；兩個資料庫的 `Receipt` 都是 0 筆，
+  清孤兒那段實際上是空操作
+- 瀏覽器對容器外的 dev server 實測正常路徑沒被誤擋：新增組別、新增成員並
+  指派組別、改名、刪除成員與組別、新增與刪除公費提撥、新增支出（10 人均分、
+  Σshares 精確等於 1000）與刪除支出，全部成功；測試資料已還原，
+  分攤總和 666,294.25 ＋公費 75,000 ＝ 741,294.25，與歷史斷言一致
+
+### 這次學到的
+
+- **`pnpm build` 不要在 `pnpm dev` 還跑著的同一個目錄執行**——兩者共用
+  `.next`，build 會把 dev server 的檔案清掉，畫面直接 500（`_buildManifest.js.tmp`
+  ENOENT）。這次踩到了，重啟 dev server 就好，但不是程式問題別誤判。
+- 瀏覽器自動化要注意兩件事：`DeleteButton` 有 `window.confirm` 確認框，
+  自動化預設回 false 會靜默取消；`form.requestSubmit()` 對用 `.bind()` 綁參數
+  的 Server Action 表單不會觸發，要直接點按鈕。
 
 ## 尚未裁示的事項
 

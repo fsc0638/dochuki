@@ -61,6 +61,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // RECEIPT_STORAGE_DIR 本身可能不同，讀取時才組完整路徑
         imagePath: filename,
         engine: "LLM_VISION",
+        // P7.0：上傳當下就記下歸屬。tripId 本來就在這個 handler 手上
+        // （上面剛用它查過行程存在），先前只是沒存下來
+        tripId,
       },
     }),
     orchestrateParseReceipt({

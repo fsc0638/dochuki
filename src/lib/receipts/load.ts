@@ -6,8 +6,16 @@ import {
   type ReceiptParseOutput,
 } from "@/lib/schemas/receipt";
 
-export async function loadReceipt(receiptId: string) {
-  return prisma.receipt.findUnique({ where: { id: receiptId } });
+/**
+ * 依 id 讀一張收據，並確認它屬於指定的行程。
+ *
+ * P7.0 之前只吃 receiptId 全域查找，`/trips/[id]/expenses/new?receiptId=xxx`
+ * 的 receiptId 直接來自網址，等於可以把 A 行程的收據帶進 B 行程消費掉它的
+ * 品項與金額（CLAUDE.md 2026-08-24 記過這個限制，當時只靠 cuid 不可猜測性
+ * 擋著）。tripId 現在是 Receipt 的欄位，可以在同一次查詢裡比對。
+ */
+export async function loadReceipt(tripId: string, receiptId: string) {
+  return prisma.receipt.findFirst({ where: { id: receiptId, tripId } });
 }
 
 /**

@@ -25,7 +25,15 @@ export async function reparseReceiptAction(
 ): Promise<ActionState> {
   let imagePath: string;
   try {
-    const receipt = await prisma.receipt.findUniqueOrThrow({ where: { id: receiptId } });
+    // P7.0：帶上 tripId 一起比對，否則拿別的行程的 receiptId 也能觸發
+    // 重新解析（會消耗 Gemini 額度並覆寫那張收據的解析結果）
+    const receipt = await prisma.receipt.findFirst({
+      where: { id: receiptId, tripId },
+      select: { imagePath: true },
+    });
+    if (receipt === null) {
+      return { error: "找不到這張收據，或它不屬於這個行程" };
+    }
     imagePath = receipt.imagePath;
   } catch (error) {
     return { error: toErrorMessage(error) };

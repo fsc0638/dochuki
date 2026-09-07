@@ -41,7 +41,7 @@ export async function createExpenseAction(
 
   let receiptContext: ReceiptContext | undefined;
   if (receiptId !== null) {
-    const receipt = await loadReceipt(receiptId);
+    const receipt = await loadReceipt(parsed.data.tripId, receiptId);
     const parsedReceipt = receipt === null ? null : parseReceiptJson(receipt.parseJson);
     receiptContext = {
       receiptId,
@@ -101,7 +101,7 @@ export async function deleteExpenseAction(
   _formData: FormData,
 ): Promise<ActionState> {
   try {
-    await deleteExpense(expenseId);
+    await deleteExpense(tripId, expenseId);
   } catch (error) {
     return { error: toErrorMessage(error) };
   }
