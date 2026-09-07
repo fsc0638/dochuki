@@ -408,6 +408,31 @@ pending 的 callback 永遠不觸發，行程安靜地以 **exit 0** 結束。�
 「顯示名稱：」不動卻不報錯。改成非 TTY 時先把 stdin 讀完切成行、再逐題從
 佇列取。這也讓同一支指令既能給人互動使用，也能寫進腳本驗收。
 
+## ⚠️ 正式站要開始用之前，記得在那邊也跑一次 bootstrap
+
+**開發資料庫與正式站資料庫是完全獨立的兩份**（compose project 不同、volume
+不同，見 `CLOUD_SETUP.md`）。2026-09-07 在開發資料庫建的管理者帳號
+**不會**出現在正式站——正式站的 `User` 目前是 0 筆。
+
+正式站的 runtime 映像為了瘦身只帶正式依賴，容器裡**沒有 tsx**，所以
+`pnpm auth` 不能在容器內執行。做法是從開發樹跑同一支 CLI，把 `DATABASE_URL`
+指到正式站的資料庫容器：
+
+```bash
+ssh dochuki -t 'cd ~/dochuki && export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh" && \
+  DATABASE_URL="postgresql://dochuki:dochuki@$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" dochuki-prod-db):5432/dochuki" \
+  pnpm auth bootstrap'
+```
+
+容器 IP 每次重啟都可能變，所以用 `docker inspect` 當場取，不要寫死。
+正式站的 db 刻意不對主機開 port（`docker-compose.prod.yml` 的 `ports: !reset []`），
+但 Linux 的 docker bridge 讓主機連得到容器 IP，這條路走得通——2026-09-07
+已用假 token 跑 `pnpm auth whoami` 對正式站資料庫做過唯讀連線測試，確認通。
+
+**P7.2 的註冊頁面上線後這個步驟就不需要了**——正式站直接用網頁註冊即可，
+第一個註冊的人建立行程時自然成為 OWNER。這段留著是給「網頁註冊還沒好、
+但正式站已經要用」的空窗期。
+
 ## 尚未裁示的事項
 
 （全部已裁示，無待決事項。）
