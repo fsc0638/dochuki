@@ -46,6 +46,27 @@ function receiptToInitial(
     amountOriginal: new Money(parsed.total).toString(),
     payerId: memberIds[0] ?? "",
     splitMode: "EQUAL",
+
+    // P8：把解析抓到但先前被丟掉的部分一併帶進表單。
+    // 沒有這幾行的話，8 個品項、地址、稅金會在這個函式裡靜靜消失——
+    // 那正是「截出來分析的資訊太少」的成因。
+    storeNameRaw: parsed.store ?? "",
+    storeAddress: parsed.address ?? "",
+    lineItems: parsed.items.map((item) => ({
+      nameRaw: item.name_raw,
+      nameZh: item.name_zh ?? "",
+      qty: new Money(item.qty).toString(),
+      unitPrice: item.unit_price === null ? "" : new Money(item.unit_price).toString(),
+      amount: new Money(item.amount).toString(),
+      taxRate: item.tax_rate === null ? "" : String(item.tax_rate),
+      category: item.category ?? "",
+    })),
+    taxes: parsed.tax.map((row) => ({
+      // 解析層用中文字串表示內外稅，資料庫用 enum，在這裡轉一次
+      mode: row.mode === "內稅(税込)" ? "INCLUSIVE" : row.mode === "外稅(税抜)" ? "EXCLUSIVE" : "",
+      rate: String(row.rate),
+      amount: row.amount === null ? "" : new Money(row.amount).toString(),
+    })),
   };
 }
 

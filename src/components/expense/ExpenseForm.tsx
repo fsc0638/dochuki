@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useMemo, useRef, useState } from "react";
+import { ReceiptDetailEditor } from "@/components/expense/ReceiptDetailEditor";
 import { Field, inputClass } from "@/components/ui/Field";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { Select } from "@/components/ui/Select";
@@ -32,7 +33,15 @@ export interface ExpenseFormGroup {
  * 品項／稅率的信心，這張表單沒有可以標紅的單一對應欄位（品項本身不在這裡
  * 編輯），因此不在此列——是刻意的範圍限制，不是漏掉。
  */
-export type LowConfidenceField = "description" | "paidAt" | "currency" | "amountOriginal";
+// P8 加入 items 與 tax：解析層本來就算了這兩個信心分數，但 P3 時畫面上
+// 沒有對應欄位可標，等於算了沒人看
+export type LowConfidenceField =
+  | "description"
+  | "paidAt"
+  | "currency"
+  | "amountOriginal"
+  | "items"
+  | "tax";
 
 export interface ExpenseFormInitial {
   description: string;
@@ -50,6 +59,29 @@ export interface ExpenseFormInitial {
   weights?: Record<string, string>;
   exactShares?: Record<string, string>;
   fundSpend?: boolean;
+
+  // --- P8：收據解析抓得到的其餘欄位 ---
+  storeNameRaw?: string;
+  storeAddress?: string;
+  lineItems?: LineItemDraft[];
+  taxes?: TaxDraft[];
+}
+
+/** 確認頁上可編輯的品項。全部用字串，跟表單其他欄位一致 */
+export interface LineItemDraft {
+  nameRaw: string;
+  nameZh: string;
+  qty: string;
+  unitPrice: string;
+  amount: string;
+  taxRate: string;
+  category: string;
+}
+
+export interface TaxDraft {
+  mode: string;
+  rate: string;
+  amount: string;
 }
 
 /**
@@ -109,6 +141,9 @@ export function ExpenseForm({
     () => new Set(initial?.participantIds ?? members.map((m) => m.id)),
   );
   const [groupId, setGroupId] = useState(initial?.groupId ?? groups[0]?.id ?? "");
+  // P8：收據明細。手動輸入的支出這兩個是空陣列，編輯既有支出時由呼叫端帶入
+  const [lineItems, setLineItems] = useState(initial?.lineItems ?? []);
+  const [taxes, setTaxes] = useState(initial?.taxes ?? []);
   const [weights, setWeights] = useState<Record<string, string>>(initial?.weights ?? {});
   const [exactShares, setExactShares] = useState<Record<string, string>>(
     initial?.exactShares ?? {},
@@ -277,6 +312,40 @@ export function ExpenseForm({
           className={`${inputClass} ${lowConfidenceClass("description")}`}
         />
       </Field>
+
+      {/* P8：店名原文與地址。解析抓得到但 P3 沒有落地——description 放的是
+          中譯，日本店家對帳時原文往往才是關鍵；地址則完全被丟掉。
+          手動輸入的支出留空即可，不是必填。 */}
+      <Field label="店名原文（選填）" htmlFor="storeNameRaw">
+        <input
+          id="storeNameRaw"
+          name="storeNameRaw"
+          type="text"
+          defaultValue={initial?.storeNameRaw ?? ""}
+          placeholder="收據上的原文店名"
+          className={inputClass}
+        />
+      </Field>
+
+      <Field label="地址（選填）" htmlFor="storeAddress">
+        <input
+          id="storeAddress"
+          name="storeAddress"
+          type="text"
+          defaultValue={initial?.storeAddress ?? ""}
+          placeholder="收據上的店家地址"
+          className={inputClass}
+        />
+      </Field>
+
+      <ReceiptDetailEditor
+        lineItems={lineItems}
+        taxes={taxes}
+        onLineItemsChange={setLineItems}
+        onTaxesChange={setTaxes}
+        itemsLowConfidence={lowConfidenceFields?.has("items") ?? false}
+        taxLowConfidence={lowConfidenceFields?.has("tax") ?? false}
+      />
 
       <div className="flex gap-3">
         <Field label="分類" htmlFor="category" errors={state.fieldErrors?.category}>

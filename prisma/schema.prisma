@@ -39,6 +39,14 @@ enum ParseEngine {
   MANUAL
 }
 
+/// 收據上的稅金標示方式。日本收據常見兩種並存（8% 與 10% 各一列）。
+/// 只有 mode 沒有 amount 是合法的——解析層明確允許「認得出內外稅但配不到
+/// 金額」的情況，不得為了湊數字而捏造（見 schemas/receipt.ts 的說明）。
+enum TaxMode {
+  INCLUSIVE // 內稅（税込）
+  EXCLUSIVE // 外稅（税抜）
+}
+
 /// 一個 User 在一個 Trip 裡的角色（P7.1）。
 /// OWNER 是建立者：可改行程設定、發邀請券、刪行程。
 /// EDITOR 是一般團員：可記帳、改支出，但不能邀請別人（2026-09-07 使用者裁示）。
@@ -106,7 +114,12 @@ model Expense {
   amountHome     Decimal        @db.Decimal(18, 6) // = amountOriginal × rateUsed
   splitMode      SplitMode
   fundSpend      Boolean        @default(false) // true = 由公費支付，不進個人分攤
+  // 收據解析抓得到、但 P3 當時沒有落地的兩個欄位（P8 補上）。
+  // description 放的是中譯店名，原文對日本店家對帳時往往才是關鍵。
+  storeNameRaw   String? // 店名原文（未翻譯）
+  storeAddress   String? // 店家地址
   shares         ExpenseShare[]
+  taxes          ExpenseTax[]
   lineItems      LineItem[]
   receipts       Receipt[]
   createdAt      DateTime       @default(now())
@@ -122,6 +135,21 @@ model ExpenseShare {
   shareHome Decimal @db.Decimal(18, 6) // 記帳幣分攤額（引擎輸出落地）
 
   @@id([expenseId, memberId])
+}
+
+/// 收據上的稅金明細（P8）。一張收據可能有多列（日本 8% 與 10% 並存）。
+///
+/// rate 與 amount 都可為 null：解析層允許「認得出是內稅但配不到金額」，
+/// 這裡照實保留，不補零也不捏造。金額一律走 Decimal，不用 Float。
+model ExpenseTax {
+  id        String   @id @default(cuid())
+  expenseId String
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  mode      TaxMode?
+  rate      Decimal? @db.Decimal(6, 4) // 0.08 / 0.10
+  amount    Decimal? @db.Decimal(18, 6)
+
+  @@index([expenseId])
 }
 
 model LineItem {

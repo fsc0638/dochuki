@@ -422,13 +422,19 @@ function buildParticipants(
 }
 
 /** 拍照解析出的品項，建支出時可一併落地成 LineItem（見 P3 收據解析） */
+/**
+ * 品項的寫入形狀。P8 起全部是**字串**，跟表單其他金額欄位一致——
+ * 先前是 number，因為當時品項只從 `Receipt.parseJson` 來（解析出來就是
+ * JSON number）；現在來源是使用者可編輯的表單，字串才是原始形態，
+ * 提早轉成 number 反而會在中途引入浮點誤差。
+ */
 export interface ReceiptLineItemInput {
   nameRaw: string;
   nameZh: string | null;
-  qty: number;
-  unitPrice: number | null;
-  amount: number;
-  taxRate: number | null;
+  qty: string;
+  unitPrice: string | null;
+  amount: string;
+  taxRate: string | null;
   category: string | null;
 }
 
@@ -436,9 +442,15 @@ export interface ReceiptLineItemInput {
  * 「確認入帳」來自收據時的額外落地內容：品項明細＋把 Receipt 與這筆
  * Expense 綁回去（Receipt.expenseId）。
  */
+/**
+ * 「確認入帳」來自收據時的額外落地內容。
+ *
+ * P8 起**不再帶品項**：品項改成由表單提供（`input.lineItems`），因為使用者
+ * 現在可以在確認頁逐筆複查與修改，從資料庫重讀等於把他的修正丟掉。
+ * 這裡只剩「把 Receipt 綁回這筆 Expense」這件事。
+ */
 export interface ReceiptContext {
   receiptId: string;
-  lineItems: ReceiptLineItemInput[];
 }
 
 /**
@@ -460,6 +472,49 @@ export interface ReceiptContext {
 function resolveUnitPrice(item: ReceiptLineItemInput): Decimal {
   if (item.unitPrice !== null) return new Money(item.unitPrice);
   return new Money(item.amount).dividedBy(item.qty);
+}
+
+/**
+ * 寫入品項與稅金明細（P8）。建立與更新共用，避免兩邊邏輯漂移。
+ *
+ * 呼叫端負責先清掉舊資料（更新時），這裡只管寫入。
+ */
+async function writeLineItemsAndTaxes(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  expenseId: string,
+  input: ExpenseFormInput,
+): Promise<void> {
+  // `?? []` 不是防禦性冗餘：這四個欄位在 schema 是 optional，
+  // 離線佇列裡可能還有這次改版前存的 payload（見 schemas/expense.ts）
+  const lineItems = input.lineItems ?? [];
+  const taxes = input.taxes ?? [];
+
+  if (lineItems.length > 0) {
+    await tx.lineItem.createMany({
+      data: lineItems.map((item) => ({
+        expenseId,
+        nameRaw: item.nameRaw,
+        nameZh: item.nameZh,
+        qty: toDbFactor(item.qty),
+        unitPrice: toDbAmount(resolveUnitPrice(item)),
+        amount: toDbAmount(item.amount),
+        taxRate: item.taxRate === null ? null : toDbFactor(item.taxRate),
+        category: item.category,
+      })),
+    });
+  }
+  if (taxes.length > 0) {
+    await tx.expenseTax.createMany({
+      data: taxes.map((row) => ({
+        expenseId,
+        mode: row.mode,
+        // rate 與 amount 都允許 null——解析層明確允許「認得出內外稅但配不到
+        // 金額」，這裡照實保留，不補零
+        rate: row.rate === null ? null : toDbFactor(row.rate),
+        amount: row.amount === null ? null : toDbAmount(row.amount),
+      })),
+    });
+  }
 }
 
 /**
@@ -505,6 +560,8 @@ export async function createExpense(
         amountHome: resolved.amountHome,
         splitMode: input.splitMode,
         fundSpend: resolved.fundSpend,
+        storeNameRaw: input.storeNameRaw ?? null,
+        storeAddress: input.storeAddress ?? null,
       },
     });
     await tx.expenseShare.createMany({
@@ -529,21 +586,12 @@ export async function createExpense(
       });
     }
 
+    // 品項與稅金來自表單（P8 起使用者可逐筆複查修改），與收據綁定是
+    // 兩件獨立的事：手動輸入的支出也可以有品項，來自收據但被使用者刪光
+    // 品項的支出也仍然要綁回收據
+    await writeLineItemsAndTaxes(tx, expense.id, input);
+
     if (receiptContext !== undefined) {
-      if (receiptContext.lineItems.length > 0) {
-        await tx.lineItem.createMany({
-          data: receiptContext.lineItems.map((item) => ({
-            expenseId: expense.id,
-            nameRaw: item.nameRaw,
-            nameZh: item.nameZh,
-            qty: toDbFactor(item.qty),
-            unitPrice: toDbAmount(resolveUnitPrice(item)),
-            amount: toDbAmount(item.amount),
-            taxRate: item.taxRate === null ? null : toDbFactor(item.taxRate),
-            category: item.category,
-          })),
-        });
-      }
       await tx.receipt.update({
         where: { id: receiptContext.receiptId },
         data: { expenseId: expense.id },
@@ -580,6 +628,8 @@ export async function updateExpense(
         amountHome: resolved.amountHome,
         splitMode: input.splitMode,
         fundSpend: resolved.fundSpend,
+        storeNameRaw: input.storeNameRaw ?? null,
+        storeAddress: input.storeAddress ?? null,
       },
     });
     await tx.expenseShare.deleteMany({ where: { expenseId } });
@@ -594,6 +644,12 @@ export async function updateExpense(
     // linkedExpenseId 是純欄位、沒有 DB 層外鍵（見 schema.prisma FundEntry），
     // 不會隨 Expense 異動自動同步——每次更新都先砍舊的、金額或幣別若變了
     // 也不會留下對不上的殘影，還在公費支付就重建一筆對齊最新金額。
+    // 品項與稅金整批替換，跟 ExpenseShare 同一套做法：先清空再重建，
+    // 不做逐筆 diff。使用者在確認頁刪掉一列時，那一列就該從資料庫消失
+    await tx.lineItem.deleteMany({ where: { expenseId } });
+    await tx.expenseTax.deleteMany({ where: { expenseId } });
+    await writeLineItemsAndTaxes(tx, expenseId, input);
+
     await tx.fundEntry.deleteMany({ where: { linkedExpenseId: expenseId } });
     if (resolved.fundSpend && resolved.fundId !== null) {
       await tx.fundEntry.create({

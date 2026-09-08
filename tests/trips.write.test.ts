@@ -72,6 +72,7 @@ async function purgeTrip(tripId: string): Promise<void> {
   // Receipt 要先清：P7.0 之後 Trip→Receipt 是 ON DELETE RESTRICT，留著沒綁
   // 支出的收據會擋住整個行程刪不掉
   await prisma.receipt.deleteMany({ where: { tripId } });
+  await prisma.expenseTax.deleteMany({ where: { expense: { tripId } } });
   await prisma.expenseShare.deleteMany({ where: { expense: { tripId } } });
   await prisma.fundEntry.deleteMany({ where: { fund: { tripId } } });
   await prisma.fund.deleteMany({ where: { tripId } });
@@ -404,31 +405,31 @@ describe("trips/write · trips/load", () => {
           fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2],
-        },
-        {
-          receiptId: receipt.id,
+          // P8：品項改由表單提供（使用者可在確認頁逐筆複查修改），
+          // 不再由 createExpense 從 Receipt.parseJson 重讀
           lineItems: [
             {
               nameRaw: "おにぎり",
               nameZh: "飯糰",
-              qty: 2,
-              unitPrice: 50,
-              amount: 100,
-              taxRate: 0.08,
+              qty: "2",
+              unitPrice: "50",
+              amount: "100",
+              taxRate: "0.08",
               category: "餐飲",
             },
             {
               // unitPrice 為 null：驗證 amount÷qty 推算（50 ÷ 1 = 50）
               nameRaw: "お茶",
               nameZh: "茶",
-              qty: 1,
+              qty: "1",
               unitPrice: null,
-              amount: 50,
-              taxRate: null,
+              amount: "50",
+              taxRate: null, // 這一筆刻意沒有稅率，驗證 null 會原樣落地
               category: "餐飲",
             },
           ],
         },
+        { receiptId: receipt.id },
       );
 
       const lineItems = await prisma.lineItem.findMany({
@@ -472,8 +473,10 @@ describe("trips/write · trips/load", () => {
           fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2],
+          // 這個案例的重點就是「沒有品項」：確認 Receipt 仍會被綁回支出
+          lineItems: [],
         },
-        { receiptId: receipt.id, lineItems: [] },
+        { receiptId: receipt.id },
       );
 
       const lineItems = await prisma.lineItem.findMany({ where: { expenseId: expense.id } });
@@ -519,21 +522,19 @@ describe("trips/write · trips/load", () => {
           fundSpend: false,
           splitMode: "EQUAL",
           participantIds: [m1, m2],
-        },
-        {
-          receiptId: receipt.id,
           lineItems: [
             {
               nameRaw: "無單價品項",
               nameZh: null,
-              qty: 3,
+              qty: "3",
               unitPrice: null, // 逼推算路徑：1000 ÷ 3
-              amount: 1000,
+              amount: "1000",
               taxRate: null,
               category: null,
             },
           ],
         },
+        { receiptId: receipt.id },
       );
       const lineItem = await prisma.lineItem.findFirstOrThrow({
         where: { expenseId: expense.id },
@@ -561,7 +562,7 @@ describe("trips/write · trips/load", () => {
         splitMode: "EQUAL" as const,
         participantIds: [m1, m2],
       };
-      const receiptContext = { receiptId: receipt.id, lineItems: [] };
+      const receiptContext = { receiptId: receipt.id };
 
       const first = await createExpense(input, receiptContext);
       await expect(createExpense(input, receiptContext)).rejects.toThrow(
@@ -593,7 +594,7 @@ describe("trips/write · trips/load", () => {
             splitMode: "EQUAL",
             participantIds: [m1, m2],
           },
-          { receiptId: "cnonexistent00000000000000", lineItems: [] },
+          { receiptId: "cnonexistent00000000000000" },
         ),
       ).rejects.toThrow("找不到這張收據，可能已被刪除");
 
@@ -1118,7 +1119,7 @@ describe("P7.0 · 跨行程存取一律拒絕", () => {
           splitMode: "EQUAL",
           participantIds: [memberB],
         },
-        { receiptId: receipt.id, lineItems: [] },
+        { receiptId: receipt.id },
       ),
     ).rejects.toThrow("不屬於這個行程");
 
@@ -1126,5 +1127,184 @@ describe("P7.0 · 跨行程存取一律拒絕", () => {
     expect(after.expenseId).toBeNull();
 
     await prisma.receipt.delete({ where: { id: receipt.id } });
+  });
+});
+
+/**
+ * P8：收據解析結果的完整落地。
+ *
+ * 背景：專案憲法要求「解析（店名/品項/時間/地址/幣別/稅金）→ 逐欄確認」，
+ * 但 P3 只落地了其中四類。這組測試釘住補上的三塊：店名原文、地址、稅金，
+ * 以及「品項改由表單提供」這個對 P3「不信任表單」決定的反轉。
+ */
+describe("P8 · 收據明細落地", () => {
+  // 自帶行程與成員：這個 describe 在檔案最外層，用不到上面那個
+  // describe 裡的 tripId／m1
+  let tripId: string;
+  let m1: string;
+
+  beforeAll(async () => {
+    const trip = await createTrip(
+      {
+        name: "P8 明細測試",
+        startDate: "2026-09-01",
+        endDate: "2026-09-03",
+        homeCurrency: "TWD",
+        fixedRates: [],
+      },
+      await ensureTestOwner(),
+    );
+    tripId = trip.id;
+    m1 = (await createMember({ tripId, name: "P8甲", groupId: null })).id;
+  });
+
+  afterAll(async () => {
+    await purgeTrip(tripId);
+  });
+
+  it("店名原文、地址、稅金都會寫進資料庫", async () => {
+    const expense = await createExpense({
+      tripId,
+      description: "7-11（中譯）",
+      category: "餐飲",
+      paidAt: "2026-09-02T09:00:00+08:00",
+      currency: "TWD",
+      amountOriginal: "540",
+      payerId: m1,
+      fundSpend: false,
+      splitMode: "EQUAL",
+      participantIds: [m1],
+      storeNameRaw: "セブン-イレブン 新潟駅前店",
+      storeAddress: "新潟県新潟市中央区花園1-1-1",
+      taxes: [
+        { mode: "INCLUSIVE", rate: "0.08", amount: "40" },
+        { mode: "EXCLUSIVE", rate: "0.1", amount: "50" },
+      ],
+    });
+
+    const row = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
+    expect(row.storeNameRaw).toBe("セブン-イレブン 新潟駅前店");
+    expect(row.storeAddress).toBe("新潟県新潟市中央区花園1-1-1");
+
+    const taxes = await prisma.expenseTax.findMany({
+      where: { expenseId: expense.id },
+      orderBy: { rate: "asc" },
+    });
+    expect(taxes).toHaveLength(2);
+    expect(taxes[0].mode).toBe("INCLUSIVE");
+    expect(fromDb(taxes[0].rate!).toString()).toBe("0.08");
+    expect(fromDb(taxes[0].amount!).toString()).toBe("40");
+    expect(taxes[1].mode).toBe("EXCLUSIVE");
+
+    await deleteExpense(tripId, expense.id);
+  });
+
+  it("稅金允許「只認得出內外稅、配不到金額」——不補零也不捏造", async () => {
+    const expense = await createExpense({
+      tripId,
+      description: "只有稅制標示",
+      category: "餐飲",
+      paidAt: "2026-09-02T09:00:00+08:00",
+      currency: "TWD",
+      amountOriginal: "100",
+      payerId: m1,
+      fundSpend: false,
+      splitMode: "EQUAL",
+      participantIds: [m1],
+      taxes: [{ mode: "INCLUSIVE", rate: null, amount: null }],
+    });
+
+    const tax = await prisma.expenseTax.findFirstOrThrow({ where: { expenseId: expense.id } });
+    expect(tax.mode).toBe("INCLUSIVE");
+    // 關鍵：null 而不是 0。0 會讓報表誤以為「稅額是零」
+    expect(tax.rate).toBeNull();
+    expect(tax.amount).toBeNull();
+
+    await deleteExpense(tripId, expense.id);
+  });
+
+  it("更新支出時品項與稅金整批替換，刪掉的列真的會消失", async () => {
+    const expense = await createExpense({
+      tripId,
+      description: "先有兩項",
+      category: "餐飲",
+      paidAt: "2026-09-02T09:00:00+08:00",
+      currency: "TWD",
+      amountOriginal: "300",
+      payerId: m1,
+      fundSpend: false,
+      splitMode: "EQUAL",
+      participantIds: [m1],
+      lineItems: [
+        { nameRaw: "A", nameZh: null, qty: "1", unitPrice: "100", amount: "100", taxRate: null, category: null },
+        { nameRaw: "B", nameZh: null, qty: "1", unitPrice: "200", amount: "200", taxRate: null, category: null },
+      ],
+      taxes: [{ mode: "INCLUSIVE", rate: "0.1", amount: "27" }],
+    });
+    expect(await prisma.lineItem.count({ where: { expenseId: expense.id } })).toBe(2);
+
+    // 使用者在確認頁刪掉一項、清空稅金
+    await updateExpense(expense.id, {
+      tripId,
+      description: "改成一項",
+      category: "餐飲",
+      paidAt: "2026-09-02T09:00:00+08:00",
+      currency: "TWD",
+      amountOriginal: "100",
+      payerId: m1,
+      fundSpend: false,
+      splitMode: "EQUAL",
+      participantIds: [m1],
+      lineItems: [
+        { nameRaw: "A", nameZh: "甲", qty: "1", unitPrice: "100", amount: "100", taxRate: null, category: null },
+      ],
+      taxes: [],
+    });
+
+    const items = await prisma.lineItem.findMany({ where: { expenseId: expense.id } });
+    expect(items).toHaveLength(1);
+    expect(items[0].nameZh).toBe("甲"); // 使用者的修正有生效
+    expect(await prisma.expenseTax.count({ where: { expenseId: expense.id } })).toBe(0);
+
+    await deleteExpense(tripId, expense.id);
+  });
+
+  it("刪除支出會連帶清掉稅金（cascade）", async () => {
+    const expense = await createExpense({
+      tripId,
+      description: "待刪除",
+      category: "餐飲",
+      paidAt: "2026-09-02T09:00:00+08:00",
+      currency: "TWD",
+      amountOriginal: "100",
+      payerId: m1,
+      fundSpend: false,
+      splitMode: "EQUAL",
+      participantIds: [m1],
+      taxes: [{ mode: "INCLUSIVE", rate: "0.1", amount: "9" }],
+    });
+    await deleteExpense(tripId, expense.id);
+    expect(await prisma.expenseTax.count({ where: { expenseId: expense.id } })).toBe(0);
+  });
+
+  it("手動輸入的支出沒有這些欄位也能建立（全部選填）", async () => {
+    const expense = await createExpense({
+      tripId,
+      description: "純手動輸入",
+      category: "餐飲",
+      paidAt: "2026-09-02T09:00:00+08:00",
+      currency: "TWD",
+      amountOriginal: "100",
+      payerId: m1,
+      fundSpend: false,
+      splitMode: "EQUAL",
+      participantIds: [m1],
+    });
+    const row = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
+    expect(row.storeNameRaw).toBeNull();
+    expect(row.storeAddress).toBeNull();
+    expect(await prisma.lineItem.count({ where: { expenseId: expense.id } })).toBe(0);
+
+    await deleteExpense(tripId, expense.id);
   });
 });

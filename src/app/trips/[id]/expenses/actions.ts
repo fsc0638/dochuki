@@ -6,7 +6,6 @@ import { redirect } from "next/navigation";
 import { type ActionState, toErrorMessage } from "@/lib/actionState";
 import { ExpenseFormSchema, parseExpenseFormData } from "@/lib/schemas/expense";
 import { createExpense, deleteExpense, updateExpense, type ReceiptContext } from "@/lib/trips/write";
-import { loadReceipt, parseReceiptJson } from "@/lib/receipts/load";
 
 function flattenFieldErrors(
   fieldErrors: Record<string, string[] | undefined>,
@@ -45,24 +44,12 @@ export async function createExpenseAction(
   const guard = await guardAction(parsed.data.tripId, "EDITOR");
   if (!guard.ok) return { error: guard.message };
 
-  let receiptContext: ReceiptContext | undefined;
-  if (receiptId !== null) {
-    const receipt = await loadReceipt(parsed.data.tripId, receiptId);
-    const parsedReceipt = receipt === null ? null : parseReceiptJson(receipt.parseJson);
-    receiptContext = {
-      receiptId,
-      lineItems:
-        parsedReceipt?.items.map((item) => ({
-          nameRaw: item.name_raw,
-          nameZh: item.name_zh,
-          qty: item.qty,
-          unitPrice: item.unit_price,
-          amount: item.amount,
-          taxRate: item.tax_rate,
-          category: item.category,
-        })) ?? [],
-    };
-  }
+  // P8：品項不再從 Receipt.parseJson 重讀。使用者在確認頁可以逐筆修改，
+  // 重讀等於把他的修正丟掉——表單才是真相來源（見 schemas/expense.ts 的
+  // LineItemRowSchema 說明，以及那裡對「為什麼這樣安全」的論證）。
+  // 這裡只剩把收據綁回這筆支出。
+  const receiptContext: ReceiptContext | undefined =
+    receiptId !== null ? { receiptId } : undefined;
 
   try {
     await createExpense(parsed.data, receiptContext);
