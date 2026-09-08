@@ -68,7 +68,15 @@ export async function loadExpenses(tripId: string, filter: ExpenseFilter = {}) {
           ? undefined
           : { some: { memberId: filter.memberId } },
     },
-    include: { payer: true, shares: true },
+    // P9：帶出品項給列表的「選購項目」展開用。只取顯示需要的欄位，
+    // 不整包撈——一趟旅程的品項筆數可能是支出筆數的好幾倍
+    include: {
+      payer: true,
+      shares: true,
+      lineItems: {
+        select: { id: true, nameRaw: true, nameZh: true, qty: true, amount: true, category: true },
+      },
+    },
     orderBy: { paidAt: "desc" },
   });
 }
@@ -76,7 +84,10 @@ export async function loadExpenses(tripId: string, filter: ExpenseFilter = {}) {
 export async function loadExpenseForEdit(expenseId: string) {
   return prisma.expense.findUnique({
     where: { id: expenseId },
-    include: { shares: true },
+    // 品項與稅金一定要一起帶出來：更新是**整批替換**（write.ts 先 deleteMany
+    // 再 createMany），編輯頁若沒把既有的餵回表單，使用者只是改個金額按存檔，
+    // 品項就會被清空。這是 P8 加上品項後才出現的風險，P9 補上。
+    include: { shares: true, lineItems: true, taxes: true },
   });
 }
 

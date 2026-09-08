@@ -13,7 +13,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "auth": "tsx scripts/auth/cli.ts"
+    "auth": "tsx scripts/auth/cli.ts",
+    "receipts:purge": "tsx scripts/receipts/purge.mts"
   },
   "dependencies": {
     "@google/genai": "^2.18.0",

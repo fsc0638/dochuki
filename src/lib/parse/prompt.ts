@@ -20,7 +20,20 @@ Rules:
    Detect 内税/税込 (tax-included) vs 外税/税抜 (tax-excluded) and set tax[].mode.
    Mark each line item's tax_rate when the receipt marks it (e.g. ※ = 8%).
 6. name_zh: natural zh-TW translation of each item (おにぎり→飯糰), keep brand names as-is.
-7. category: pick from 餐飲/交通/住宿/購物/門票/雜項 by item nature.
+7. category: pick from 餐飲/交通/住宿/購物/門票/雜項.
+   Classify by WHAT THE ITEM IS, never by what kind of shop sold it.
+   - 餐飲: anything eaten or drunk. This INCLUDES groceries and raw ingredients
+     bought at a supermarket or convenience store — vegetables, fruit, meat,
+     fish, eggs, dairy, bread, snacks, sweets, instant noodles, bottled drinks,
+     alcohol. A supermarket run is 餐飲, not 購物.
+   - 購物: durable goods and non-consumables — clothing, cosmetics, electronics,
+     stationery, kitchenware, books, souvenirs, medicine, toiletries.
+   - 交通: tickets, fares, fuel, tolls, parking, car rental.
+   - 住宿: hotel/inn charges.
+   - 門票: admission to attractions, museums, events.
+   - 雜項: only when none of the above fits. Do not use it as a dumping ground.
+   When a single receipt mixes food and non-food, categorise each line
+   independently — do not apply one category to the whole receipt.
 8. Mask any card number except last 4 digits; never output full PAN.
 9. confidence: per-field 0–1 (keys: store, datetime, currency, total, items, tax).
 10. Sanity check before answering: sum(items.amount) should reconcile with subtotal/total
@@ -51,7 +64,20 @@ Rules:
    Detect 内税/税込 (tax-included) vs 外税/税抜 (tax-excluded) and set tax[].mode.
    Mark each line item's tax_rate when the receipt marks it (e.g. ※ = 8%).
 6. name_zh: natural zh-TW translation of each item (おにぎり→飯糰), keep brand names as-is.
-7. category: pick from 餐飲/交通/住宿/購物/門票/雜項 by item nature.
+7. category: pick from 餐飲/交通/住宿/購物/門票/雜項.
+   Classify by WHAT THE ITEM IS, never by what kind of shop sold it.
+   - 餐飲: anything eaten or drunk. This INCLUDES groceries and raw ingredients
+     bought at a supermarket or convenience store — vegetables, fruit, meat,
+     fish, eggs, dairy, bread, snacks, sweets, instant noodles, bottled drinks,
+     alcohol. A supermarket run is 餐飲, not 購物.
+   - 購物: durable goods and non-consumables — clothing, cosmetics, electronics,
+     stationery, kitchenware, books, souvenirs, medicine, toiletries.
+   - 交通: tickets, fares, fuel, tolls, parking, car rental.
+   - 住宿: hotel/inn charges.
+   - 門票: admission to attractions, museums, events.
+   - 雜項: only when none of the above fits. Do not use it as a dumping ground.
+   When a single receipt mixes food and non-food, categorise each line
+   independently — do not apply one category to the whole receipt.
 8. Mask any card number except last 4 digits; never output full PAN.
 9. confidence: per-field 0–1 (keys: store, datetime, currency, total, items, tax). OCR text
    may contain misrecognized characters — lower confidence for fields where the text looks

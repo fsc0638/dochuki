@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { PurchasedItems } from "@/components/expense/PurchasedItems";
+import { fromDb } from "@/lib/money/fromDb";
+import { roundForDisplay } from "@/lib/money/round";
 import { Money } from "@/components/ui/Money";
 import type { loadExpenses } from "@/lib/trips/load";
 
@@ -60,6 +63,20 @@ export function ExpenseList({
               )}
             </div>
           </Link>
+
+          {/* 選購項目放在 Link **外面**：整列是連結，展開鈕若在裡面會同時導頁 */}
+          <PurchasedItems
+            currency={expense.currency}
+            items={expense.lineItems.map((item) => ({
+              id: item.id,
+              nameRaw: item.nameRaw,
+              nameZh: item.nameZh,
+              // 金額格式化在伺服器端做——UI 層不得自行運算（CLAUDE.md 程式慣例）
+              qty: fromDb(item.qty).toString(),
+              amount: roundForDisplay(fromDb(item.amount), expense.currency).toString(),
+            category: item.category,
+            }))}
+          />
         </li>
       ))}
     </ul>

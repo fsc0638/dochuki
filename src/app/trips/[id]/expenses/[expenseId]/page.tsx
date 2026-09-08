@@ -74,6 +74,24 @@ export default async function EditExpensePage({
         initial={{
           description: expense.description,
           category: expense.category,
+          // P9：品項與稅金一定要帶回表單。更新是整批替換，沒帶回來的話
+          // 使用者只是改個金額按存檔，品項就會被清空
+          storeNameRaw: expense.storeNameRaw ?? "",
+          storeAddress: expense.storeAddress ?? "",
+          lineItems: expense.lineItems.map((item) => ({
+            nameRaw: item.nameRaw,
+            nameZh: item.nameZh ?? "",
+            qty: fromDb(item.qty).toString(),
+            unitPrice: fromDb(item.unitPrice).toString(),
+            amount: fromDb(item.amount).toString(),
+            taxRate: item.taxRate === null ? "" : fromDb(item.taxRate).toString(),
+            category: item.category ?? "",
+          })),
+          taxes: expense.taxes.map((row) => ({
+            mode: row.mode ?? "",
+            rate: row.rate === null ? "" : fromDb(row.rate).toString(),
+            amount: row.amount === null ? "" : fromDb(row.amount).toString(),
+          })),
           paidAt: toDateTimeLocalValue(expense.paidAt),
           currency: expense.currency,
           amountOriginal: fromDb(expense.amountOriginal).toString(),
